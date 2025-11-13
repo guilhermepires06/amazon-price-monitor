@@ -72,11 +72,6 @@ def ensure_schema():
     conn.close()
 
 
-# 🔄 Atualiza o DB remoto e garante o schema antes de qualquer operação
-refresh_db_from_github()
-ensure_schema()
-
-
 # =========================
 # CACHE – HTML
 # =========================
@@ -206,7 +201,7 @@ def get_product_image(url):
     # 4) meta og:image
     meta = soup.find("meta", {"property": "og:image"})
     if meta and meta.get("content"):
-        return meta["content"]
+        return meta.get("content")
 
     # 5) qualquer img com /images/I/
     any_img = soup.find("img", src=lambda x: x and "images/I/" in x)
@@ -354,6 +349,16 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# =========== INICIALIZAÇÃO DO DB (AGORA COM session_state) ===========
+
+# Só baixa o banco do GitHub na PRIMEIRA vez que a sessão abrir
+if "db_initialized" not in st.session_state:
+    refresh_db_from_github()
+    ensure_schema()
+    st.session_state["db_initialized"] = True
+else:
+    # Em reruns, só garante o schema, sem sobrescrever o DB
+    ensure_schema()
 
 # =========== SIDEBAR ===========
 
