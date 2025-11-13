@@ -26,7 +26,7 @@ GITHUB_DB_URL = (
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "AppleWebKit/537.36 (KHTML, como Gecko) "
         "Chrome/120.0 Safari/537.36"
     ),
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -275,6 +275,7 @@ st.set_page_config(
     page_title="Monitor de Preços Amazon",
     layout="wide",
     page_icon="💹",
+    initial_sidebar_state="collapsed",
 )
 
 st.markdown(
@@ -297,14 +298,19 @@ st.markdown(
         border-radius: 0.9rem;
         background: #020617;
         border: 1px solid rgba(148,163,184,0.3);
-        margin-bottom: 2.5rem;  /* mais espaço entre os cards */
+        margin-bottom: 2.5rem;  /* espaçamento entre linhas da grid */
         box-shadow: 0 10px 30px rgba(15,23,42,0.7);
         text-align: center;
+        min-height: 260px;      /* altura mínima para alinhar os cards */
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
     }
     .product-card img {
-        max-height: 180px;
+        max-height: 150px;
         object-fit: contain;
         background: #020617;
+        margin-bottom: 0.5rem;
     }
     .product-header {
         background: #020617;
@@ -328,7 +334,7 @@ st.markdown(
         background: #020617;
         border: 1px solid rgba(148,163,184,0.4);
         margin-top: 1rem;
-        margin-bottom: 4rem; /* mais espaço entre detalhe e grid (~10% tela) */
+        margin-bottom: 4rem; /* espaço antes da grid (~10% da tela) */
         box-shadow: 0 18px 45px rgba(15,23,42,0.75);
     }
     .metric-badge {
@@ -344,75 +350,51 @@ st.markdown(
     .metric-badge.negative { border: 1px solid #ef4444; }
     .metric-badge.neutral  { border: 1px solid #64748b; }
     a { color: #38bdf8 !important; }
+    .section-title {
+        margin-top: 1.5rem;
+        margin-bottom: 0.8rem;
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# =========== INICIALIZAÇÃO DO DB (AGORA COM session_state) ===========
+# =========================
+# INICIALIZAÇÃO DO DB / ESTADO
+# =========================
 
-# Só baixa o banco do GitHub na PRIMEIRA vez que a sessão abrir
 if "db_initialized" not in st.session_state:
     refresh_db_from_github()
     ensure_schema()
     st.session_state["db_initialized"] = True
 else:
-    # Em reruns, só garante o schema, sem sobrescrever o DB
     ensure_schema()
 
-# Garantir chaves no session_state
 if "selected_product_id" not in st.session_state:
     st.session_state["selected_product_id"] = None
 if "confirm_delete_id" not in st.session_state:
     st.session_state["confirm_delete_id"] = None
 
-# =========== SIDEBAR ===========
-
+# Sidebar minimal
 with st.sidebar:
-    st.markdown("## ➕ Adicionar produto da Amazon")
-    st.write("Cole a URL de um produto da Amazon e (Obrigatoriamente) um nome personalizado.")
+    st.markdown("### ℹ️ Info")
+    st.caption(
+        "Este painel lê o banco `scraping.db` atualizado periodicamente "
+        "pelo GitHub Actions."
+    )
 
-    new_url = st.text_input("URL do produto na Amazon")
-    new_name = st.text_input("Nome do produto")
-
-    if st.button("Adicionar produto"):
-        if not new_url.strip():
-            st.error("Informe a URL do produto.")
-        else:
-            name_to_use = new_name.strip()
-            if not name_to_use:
-                st.info("Buscando título automaticamente na Amazon...")
-                auto_title = fetch_product_title(new_url)
-                name_to_use = auto_title or "Produto Amazon"
-
-            ok, msg = add_product_to_db(name_to_use, new_url)
-            if ok:
-                st.success(msg)
-                conn = sqlite3.connect(DB_NAME)
-                cursor = conn.cursor()
-                cursor.execute("SELECT id FROM products WHERE url = ?", (new_url.strip(),))
-                row = cursor.fetchone()
-                conn.close()
-                if row:
-                    product_id = row[0]
-                    scrape_single_product(product_id, new_url.strip())
-                    st.session_state["selected_product_id"] = product_id
-                st.rerun()
-            else:
-                st.warning(msg)
-
-
-# =========== CONTEÚDO PRINCIPAL ===========
+# =========================
+# CONTEÚDO PRINCIPAL
+# =========================
 
 st.title("💹 Monitor de Preços")
 
 df_products, df_prices = get_data()
 
 if df_products.empty:
-    st.warning("Nenhum produto cadastrado. Adicione um produto na barra lateral.")
-    st.stop()
-
-sns.set_style("whitegrid")
+    st.warning("Nenhum produto cadastrado ainda. Use o cadastro abaixo para inserir um produto.")
+else:
+    sns.set_style("whitegrid")
 
 selected_id = st.session_state.get("selected_product_id")
 confirm_delete_id = st.session_state.get("confirm_delete_id")
@@ -422,7 +404,6 @@ confirm_delete_id = st.session_state.get("confirm_delete_id")
 if confirm_delete_id is not None:
     prod_row = df_products[df_products["id"] == confirm_delete_id]
     if prod_row.empty:
-        # Se por acaso sumiu, limpa estado
         st.session_state["confirm_delete_id"] = None
     else:
         prod_name = prod_row.iloc[0]["name"]
@@ -445,9 +426,9 @@ if confirm_delete_id is not None:
                 st.info("Exclusão cancelada.")
                 st.rerun()
 
-# ============= DETALHE (CARD FIXO NO TOPO) =============
+# ============= DETALHE NO TOPO (SELECIONADO) =============
 
-if selected_id is not None and selected_id in df_products["id"].values:
+if not df_products.empty and selected_id is not None and selected_id in df_products["id"].values:
     product = df_products[df_products["id"] == selected_id].iloc[0]
     df_prod = df_prices[df_prices["product_id"] == selected_id].copy()
 
@@ -585,74 +566,113 @@ if selected_id is not None and selected_id in df_products["id"].values:
 
 # ============= GRID DE CARDS =============
 
-st.markdown("## Produtos monitorados")
+if not df_products.empty:
+    st.markdown('<h3 class="section-title">Produtos monitorados</h3>', unsafe_allow_html=True)
 
-cols = st.columns(3)
+    cols = st.columns(3)
 
-for idx, (_, product) in enumerate(df_products.iterrows()):
-    col = cols[idx % 3]
-    with col:
-        st.markdown('<div class="product-card">', unsafe_allow_html=True)
+    for idx, (_, product) in enumerate(df_products.iterrows()):
+        col = cols[idx % 3]
+        with col:
+            st.markdown('<div class="product-card">', unsafe_allow_html=True)
 
-        st.markdown(
-            f'<div class="product-header">{product["name"]}</div>',
-            unsafe_allow_html=True,
-        )
+            st.markdown(
+                f'<div class="product-header">{product["name"]}</div>',
+                unsafe_allow_html=True,
+            )
 
-        img_url = product.get("image_url")
-        if not img_url:
-            img_url = get_product_image(product["url"])
+            img_url = product.get("image_url")
+            if not img_url:
+                img_url = get_product_image(product["url"])
 
-        if img_url:
-            st.image(img_url, width=220)
+            if img_url:
+                st.image(img_url, width=220)
+            else:
+                st.markdown(
+                    """
+                    <div style="
+                        width: 220px;
+                        height: 150px;
+                        background: #111827;
+                        border-radius: 8px;
+                        border: 1px solid #334155;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 0.8rem;
+                        color: #64748b;
+                        margin: 0 auto 0.5rem auto;">
+                        Imagem indisponível
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+            latest_price = get_latest_price(df_prices, product["id"])
+            if latest_price is not None:
+                st.markdown(
+                    f'<div class="product-price">R$ {latest_price:.2f}</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    '<div class="product-price">Sem preço ainda</div>',
+                    unsafe_allow_html=True,
+                )
+
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("Ver detalhes", key=f"view_{product['id']}"):
+                    st.session_state["selected_product_id"] = product["id"]
+                    st.rerun()
+            with b2:
+                if st.button("🗑 Excluir", key=f"del_{product['id']}"):
+                    st.session_state["confirm_delete_id"] = product["id"]
+                    st.rerun()
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+# ============= CADASTRO (EXPANDER FECHADO) =============
+
+st.markdown('<h3 class="section-title">Cadastro de produtos</h3>', unsafe_allow_html=True)
+
+with st.expander("➕ Cadastrar novo produto da Amazon", expanded=False):
+    st.write(
+        "Cole a URL de um produto da Amazon e, se quiser, personalize o nome. "
+        "O sistema tentará buscar automaticamente o título e a imagem."
+    )
+    new_url = st.text_input("URL do produto na Amazon", key="cad_url")
+    new_name = st.text_input("Nome do produto (opcional)", key="cad_name")
+
+    if st.button("Adicionar produto", key="btn_add_prod"):
+        if not new_url.strip():
+            st.error("Informe a URL do produto.")
         else:
-            st.markdown(
-                """
-                <div style="
-                    width: 220px;
-                    height: 150px;
-                    background: #111827;
-                    border-radius: 8px;
-                    border: 1px solid #334155;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 0.8rem;
-                    color: #64748b;
-                    margin: 0 auto;">
-                    Imagem indisponível
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            name_to_use = new_name.strip()
+            if not name_to_use:
+                st.info("Buscando título automaticamente na Amazon...")
+                auto_title = fetch_product_title(new_url)
+                name_to_use = auto_title or "Produto Amazon"
 
-        latest_price = get_latest_price(df_prices, product["id"])
-        if latest_price is not None:
-            st.markdown(
-                f'<div class="product-price">R$ {latest_price:.2f}</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                '<div class="product-price">Sem preço ainda</div>',
-                unsafe_allow_html=True,
-            )
-
-        b1, b2 = st.columns(2)
-        with b1:
-            if st.button("Ver detalhes", key=f"view_{product['id']}"):
-                st.session_state["selected_product_id"] = product["id"]
+            ok, msg = add_product_to_db(name_to_use, new_url)
+            if ok:
+                st.success(msg)
+                conn = sqlite3.connect(DB_NAME)
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM products WHERE url = ?", (new_url.strip(),))
+                row = cursor.fetchone()
+                conn.close()
+                if row:
+                    product_id = row[0]
+                    scrape_single_product(product_id, new_url.strip())
+                    st.session_state["selected_product_id"] = product_id
                 st.rerun()
-        with b2:
-            if st.button("🗑 Excluir", key=f"del_{product['id']}"):
-                st.session_state["confirm_delete_id"] = product["id"]
-                st.rerun()
-
-        st.markdown("</div>", unsafe_allow_html=True)
+            else:
+                st.warning(msg)
 
 # ============= LOG DE ATUALIZAÇÕES =============
 
-st.markdown("## 📜 Log de atualizações recentes")
+st.markdown('<h3 class="section-title">📜 Log de atualizações recentes</h3>', unsafe_allow_html=True)
 
 if df_prices.empty:
     st.info("Ainda não há registros de preços no histórico.")
