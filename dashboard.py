@@ -10,7 +10,18 @@ from utils import extract_price  # converte texto de preço em float
 import json
 import re
 
+# =========================
+# CONFIG BÁSICA
+# =========================
+
 DB_NAME = "scraping.db"
+
+# URL do banco que o GitHub Actions atualiza
+GITHUB_DB_URL = (
+    "https://raw.githubusercontent.com/"
+    "guilhermepires06/amazon-price-monitor/"
+    "main/scraping.db"
+)
 
 HEADERS = {
     "User-Agent": (
@@ -20,6 +31,28 @@ HEADERS = {
     ),
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
 }
+
+# =========================
+# ATUALIZAR DB DO GITHUB
+# =========================
+
+def refresh_db_from_github():
+    """
+    Baixa a versão mais recente do scraping.db do GitHub
+    e salva localmente com o nome DB_NAME.
+
+    Assim, o dashboard sempre usa o mesmo banco que o GitHub Actions
+    atualiza periodicamente.
+    """
+    try:
+        resp = requests.get(GITHUB_DB_URL, timeout=20)
+        resp.raise_for_status()
+        with open(DB_NAME, "wb") as f:
+            f.write(resp.content)
+        print("[DB] Banco atualizado a partir do GitHub.")
+    except Exception as e:
+        # Se der erro, não derruba o app – usa o DB local mesmo
+        print(f"[DB] Erro ao atualizar banco do GitHub: {e}")
 
 
 # =========================
@@ -39,6 +72,8 @@ def ensure_schema():
     conn.close()
 
 
+# 🔄 Atualiza o DB remoto e garante o schema antes de qualquer operação
+refresh_db_from_github()
 ensure_schema()
 
 
@@ -355,9 +390,6 @@ with st.sidebar:
             else:
                 st.warning(msg)
 
-   
-   
-
 
 # =========== CONTEÚDO PRINCIPAL ===========
 
@@ -398,7 +430,6 @@ if selected_id is not None and selected_id in df_products["id"].values:
             st.write("**Produto**")
             img_url = product.get("image_url") or get_product_image(product["url"])
             if img_url:
-                # AQUI trocamos use_column_width -> use_container_width
                 st.image(img_url, use_container_width=True)
             else:
                 st.info("Sem imagem disponível.")
@@ -442,7 +473,6 @@ if selected_id is not None and selected_id in df_products["id"].values:
                 plt.xticks(rotation=30)
                 st.pyplot(fig)
 
-                # Insights
                 st.markdown("### 📌 Insights")
 
                 df_prod_valid = df_prod.dropna(subset=["price"])
@@ -580,7 +610,7 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
         with b2:
             if st.button("🗑 Excluir", key=f"del_{product['id']}"):
                 delete_product_from_db(product["id"])
-                if st.session_state.get("selected_product_id") == product["id"]:
+                if st.session_state.get("selected_product_id"] == product["id"]:
                     st.session_state["selected_product_id"] = None
                 st.rerun()
 
