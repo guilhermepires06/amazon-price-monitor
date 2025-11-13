@@ -610,7 +610,7 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
         with b2:
             if st.button("🗑 Excluir", key=f"del_{product['id']}"):
                 delete_product_from_db(product["id"])
-                if st.session_state.get("selected_product_id"] == product["id"]:
+                if st.session_state.get("selected_product_id") == product["id"]:
                     st.session_state["selected_product_id"] = None
                 st.rerun()
 
