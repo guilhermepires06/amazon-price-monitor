@@ -1,5 +1,7 @@
 import time
 import json
+import os
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -17,13 +19,13 @@ HEADERS = {
 
 
 def load_products():
-    """Load product list from products.json."""
+    """Carrega a lista de produtos a partir de products.json."""
     with open("products.json", "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def insert_products(products):
-    """Insert products in DB if not already there."""
+    """Insere produtos no banco se ainda não existirem."""
     conn = connect()
     cursor = conn.cursor()
 
@@ -35,13 +37,13 @@ def insert_products(products):
                 "INSERT INTO products (name, url) VALUES (?, ?)",
                 (p["name"], p["url"]),
             )
-            conn.commit()
 
+    conn.commit()
     conn.close()
 
 
 def save_price(product_id: int, price: float | None, old_price: float | None):
-    """Save one price sample into DB."""
+    """Salva um registro de preço na tabela prices."""
     conn = connect()
     cursor = conn.cursor()
     cursor.execute(
@@ -56,10 +58,9 @@ def save_price(product_id: int, price: float | None, old_price: float | None):
 
 
 def scrape_once():
-    """Run scraping for all registered products one time."""
+    """Executa o scraping de TODOS os produtos uma vez."""
     conn = connect()
     cursor = conn.cursor()
-
     cursor.execute("SELECT id, name, url FROM products")
     products = cursor.fetchall()
     conn.close()
@@ -83,6 +84,7 @@ def scrape_once():
         # Preço atual (preço principal)
         price_whole = soup.find("span", class_="a-price-whole")
         price_fraction = soup.find("span", class_="a-price-fraction")
+
         if price_whole and price_fraction:
             full_price_str = f"{price_whole.text.strip()},{price_fraction.text.strip()}"
         elif price_whole:
@@ -97,14 +99,16 @@ def scrape_once():
         old_price_str = old_price_tag.get_text(strip=True) if old_price_tag else None
         old_price = extract_price(old_price_str)
 
-        print(f"    → Preço atual: {price} | Preço antigo: {old_price}")
+        print(f" → Preço atual: {price} | Preço antigo: {old_price}")
         save_price(product_id, price, old_price)
 
 
 def run_forever(interval_hours: int = 1):
     """
     Loop infinito: executa o scraping a cada `interval_hours` horas.
-    Para testar, chame `scrape_once()` diretamente.
+
+    Use isso LOCALMENTE (por exemplo: python scraper.py)
+    se quiser deixar rodando em background.
     """
     create_tables()
     insert_products(load_products())
@@ -116,7 +120,26 @@ def run_forever(interval_hours: int = 1):
         time.sleep(interval_hours * 60 * 60)
 
 
+def run_once_for_actions():
+    """
+    Modo especial para GitHub Actions:
+    - Cria tabelas
+    - Garante produtos cadastrados
+    - Roda scraping UMA vez
+    - Encerra
+    """
+    print("[SCRAPER] Modo GitHub Actions (execução única).")
+    create_tables()
+    insert_products(load_products())
+    scrape_once()
+    print("[SCRAPER] Execução concluída.")
+
+
 if __name__ == "__main__":
-    # Para teste rápido, você pode comentar a linha run_forever()
-    # e chamar apenas scrape_once().
-    run_forever(interval_hours=1)
+    # Se estiver rodando dentro do GitHub Actions,
+    # existe a variável de ambiente GITHUB_ACTIONS=true
+    if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+        run_once_for_actions()
+    else:
+        # Modo normal (local): loop infinito
+        run_forever(interval_hours=1)
