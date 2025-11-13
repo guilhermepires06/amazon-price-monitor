@@ -469,7 +469,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
             st.write("**Produto**")
             img_url = product.get("image_url") or get_product_image(product["url"])
             if img_url:
-                st.image(img_url, use_container_width=True)
+                st.image(img_url, width="stretch")
             else:
                 st.info("Sem imagem disponível.")
             st.markdown(f"[Ver na Amazon]({product['url']})")
@@ -492,7 +492,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
                         st.info("Imagem removida.")
                     st.rerun()
             with del_col:
-                if st.button("🗑 Excluir produto", key=f"del_prod_{product['id']}"):
+                if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
                     st.session_state["confirm_delete_id"] = product["id"]
                     st.rerun()
 
@@ -674,4 +674,4 @@ else:
         }
     )
 
-    st.dataframe(df_log_view, use_container_width=True)
+    st.dataframe(df_log_view, width="stretch")
