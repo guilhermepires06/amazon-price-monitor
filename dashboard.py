@@ -297,7 +297,7 @@ st.markdown(
         border-radius: 0.9rem;
         background: #020617;
         border: 1px solid rgba(148,163,184,0.3);
-        margin-bottom: 1.5rem;
+        margin-bottom: 2.5rem;  /* mais espaço entre os cards */
         box-shadow: 0 10px 30px rgba(15,23,42,0.7);
         text-align: center;
     }
@@ -328,7 +328,7 @@ st.markdown(
         background: #020617;
         border: 1px solid rgba(148,163,184,0.4);
         margin-top: 1rem;
-        margin-bottom: 1.5rem;
+        margin-bottom: 4rem; /* mais espaço entre detalhe e grid (~10% tela) */
         box-shadow: 0 18px 45px rgba(15,23,42,0.75);
     }
     .metric-badge {
@@ -359,6 +359,12 @@ if "db_initialized" not in st.session_state:
 else:
     # Em reruns, só garante o schema, sem sobrescrever o DB
     ensure_schema()
+
+# Garantir chaves no session_state
+if "selected_product_id" not in st.session_state:
+    st.session_state["selected_product_id"] = None
+if "confirm_delete_id" not in st.session_state:
+    st.session_state["confirm_delete_id"] = None
 
 # =========== SIDEBAR ===========
 
@@ -409,7 +415,35 @@ if df_products.empty:
 sns.set_style("whitegrid")
 
 selected_id = st.session_state.get("selected_product_id")
+confirm_delete_id = st.session_state.get("confirm_delete_id")
 
+# ============= CONFIRMAÇÃO DE EXCLUSÃO =============
+
+if confirm_delete_id is not None:
+    prod_row = df_products[df_products["id"] == confirm_delete_id]
+    if prod_row.empty:
+        # Se por acaso sumiu, limpa estado
+        st.session_state["confirm_delete_id"] = None
+    else:
+        prod_name = prod_row.iloc[0]["name"]
+        st.warning(
+            f"⚠️ Tem certeza que deseja excluir o produto **{prod_name}** "
+            "e todo o histórico de preços dele?"
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("✅ Sim, excluir", key="confirm_delete_yes"):
+                delete_product_from_db(confirm_delete_id)
+                if st.session_state.get("selected_product_id") == confirm_delete_id:
+                    st.session_state["selected_product_id"] = None
+                st.session_state["confirm_delete_id"] = None
+                st.success("Produto removido com sucesso.")
+                st.rerun()
+        with c2:
+            if st.button("❌ Cancelar", key="confirm_delete_no"):
+                st.session_state["confirm_delete_id"] = None
+                st.info("Exclusão cancelada.")
+                st.rerun()
 
 # ============= DETALHE (CARD FIXO NO TOPO) =============
 
@@ -459,9 +493,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
                     st.rerun()
             with del_col:
                 if st.button("🗑 Excluir produto", key=f"del_prod_{product['id']}"):
-                    delete_product_from_db(product["id"])
-                    st.success("Produto removido com sucesso.")
-                    st.session_state["selected_product_id"] = None
+                    st.session_state["confirm_delete_id"] = product["id"]
                     st.rerun()
 
         with col_graph:
@@ -551,7 +583,6 @@ if selected_id is not None and selected_id in df_products["id"].values:
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-
 # ============= GRID DE CARDS =============
 
 st.markdown("## Produtos monitorados")
@@ -614,9 +645,33 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                 st.rerun()
         with b2:
             if st.button("🗑 Excluir", key=f"del_{product['id']}"):
-                delete_product_from_db(product["id"])
-                if st.session_state.get("selected_product_id") == product["id"]:
-                    st.session_state["selected_product_id"] = None
+                st.session_state["confirm_delete_id"] = product["id"]
                 st.rerun()
 
         st.markdown("</div>", unsafe_allow_html=True)
+
+# ============= LOG DE ATUALIZAÇÕES =============
+
+st.markdown("## 📜 Log de atualizações recentes")
+
+if df_prices.empty:
+    st.info("Ainda não há registros de preços no histórico.")
+else:
+    df_log = df_prices.sort_values("date_local", ascending=False).head(20)
+    df_log = df_log.merge(
+        df_products[["id", "name"]],
+        left_on="product_id",
+        right_on="id",
+        how="left",
+    )
+
+    df_log_view = df_log[["date_local", "name", "price", "old_price"]].rename(
+        columns={
+            "date_local": "Data/Hora (BR)",
+            "name": "Produto",
+            "price": "Preço atual (R$)",
+            "old_price": "Preço antigo (R$)",
+        }
+    )
+
+    st.dataframe(df_log_view, use_container_width=True)
