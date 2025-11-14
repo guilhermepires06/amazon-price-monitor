@@ -73,6 +73,7 @@ def get_data():
 
     return df_products, df_prices
 
+
 def get_latest_price(df_prices: pd.DataFrame, product_id: int):
     df_prod = df_prices[df_prices["product_id"] == product_id].dropna(subset=["price"])
     if df_prod.empty:
@@ -187,7 +188,6 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("© 2025 - Amazon Price Monitor")
 
-
 # =============================================================================
 # CONTEÚDO PRINCIPAL
 # =============================================================================
@@ -236,7 +236,7 @@ for _, product in df_products.iterrows():
 
         col_img, col_graph = st.columns([1, 1.8])
 
-        # IMAGEM FIXA (sem edição)
+        # IMAGEM
         with col_img:
             img_url = product.get("image_url") or get_product_image(product["url"])
             if img_url:
@@ -246,7 +246,7 @@ for _, product in df_products.iterrows():
 
             st.markdown(f"[Ver na Amazon]({product['url']})")
 
-        # GRÁFICO
+        # GRÁFICO + INSIGHTS
         with col_graph:
             if df_prod.empty:
                 st.info("Sem histórico deste produto ainda.")
@@ -277,15 +277,17 @@ for _, product in df_products.iterrows():
                         ("estável", "neutral")
                     )
 
-                    st.markdown(
-                        f"""
-                        <span class="metric-badge {trend[1]}">Tendência: {trend[0]}</span>
-                        <span class="metric-badge">Atual: R$ {last:.2f}</span>
-                        <span class="metric-badge">Mín: R$ {min_p:.2f}</span>
-                        <span class="metric-badge">Máx: R$ {max_p:.2f}</span>
-                        """,
-                        unsafe_allow_html=True,
+                    # ------- LINHA DAS MÉTRICAS (CORRIGIDA) -------
+                    metrics_html = (
+                        f'<div>'
+                        f'<span class="metric-badge {trend[1]}">Tendência: {trend[0]}</span>'
+                        f'<span class="metric-badge">Atual: R$ {last:.2f}</span>'
+                        f'<span class="metric-badge">Mín: R$ {min_p:.2f}</span>'
+                        f'<span class="metric-badge">Máx: R$ {max_p:.2f}</span>'
+                        f'</div>'
                     )
+                    st.markdown(metrics_html, unsafe_allow_html=True)
+                    # ------------------------------------------------
 
                     st.write(
                         f"**1. Tendência:** O preço variou de R$ {first:.2f} para R$ {last:.2f} "
