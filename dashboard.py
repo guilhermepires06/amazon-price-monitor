@@ -1,8 +1,6 @@
 import sqlite3
 import json
-import os
-import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -18,10 +16,7 @@ from utils import extract_price
 # CONFIG BÁSICA
 # =============================================================================
 
-DB_NAME = "scraping.db"  # ainda existe local, mas o dashboard vai usar o do GitHub
-GITHUB_DB_URL = (
-    "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"
-)
+DB_NAME = "scraping.db"
 
 HEADERS = {
     "User-Agent": (
@@ -33,14 +28,10 @@ HEADERS = {
 }
 
 # =============================================================================
-# SCHEMA (LOCAL – opcional, usado se você rodar algo que grava no disco)
+# SCHEMA
 # =============================================================================
 
 def ensure_schema():
-    """
-    Garante que, se você usar o banco local DB_NAME, ele tenha a coluna image_url.
-    O dashboard, porém, está lendo do banco do GitHub (somente leitura).
-    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     try:
@@ -63,37 +54,15 @@ def cached_html(url: str) -> str:
     return resp.text
 
 # =============================================================================
-# BANCO – LENDO DIRETO DO GITHUB (PADRÃO ÚNICO PARA TODOS OS GRÁFICOS)
+# BANCO
 # =============================================================================
 
-@st.cache_data(show_spinner=False, ttl=300)
 def get_data():
-    """
-    Baixa o scraping.db direto do GitHub (RAW), grava em um arquivo temporário
-    e lê as tabelas products e prices. Cache de 5 minutos.
-    """
-    resp = requests.get(GITHUB_DB_URL, headers=HEADERS, timeout=30)
-    resp.raise_for_status()
-    db_bytes = resp.content
+    conn = sqlite3.connect(DB_NAME)
+    df_products = pd.read_sql_query("SELECT * FROM products", conn)
+    df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
+    conn.close()
 
-    # Salva em arquivo temporário para o sqlite conseguir abrir
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp:
-        tmp.write(db_bytes)
-        tmp_path = tmp.name
-
-    try:
-        conn = sqlite3.connect(tmp_path)
-        df_products = pd.read_sql_query("SELECT * FROM products", conn)
-        df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
-        conn.close()
-    finally:
-        # remove o temporário
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
-
-    # Ajuste de datas
     if "date" in df_prices.columns:
         df_prices["date"] = pd.to_datetime(df_prices["date"])
         df_prices = df_prices.sort_values("date")
@@ -147,8 +116,7 @@ st.set_page_config(
     page_icon="💹",
 )
 
-st.markdown(
-    """
+st.markdown("""
 <style>
 
 /* SIDEBAR FIXA */
@@ -207,9 +175,7 @@ st.markdown(
 }
 
 </style>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
 # =============================================================================
 # SIDEBAR
@@ -224,8 +190,8 @@ with st.sidebar:
     st.markdown("🧠 Eduardo Feres")
     st.markdown("👨‍💻 Guilherme Pires")
     st.markdown("---")
-    st.markdown("Banco de dados atualiza de 5 em 5 minutos")
-    st.markdown("Gráficos atualizam conforme o banco (cache de 5 minutos)")
+    st.markdown("Banco de dados atualiza de 5 em 5 minutos (robô)")
+    st.markdown("Horário de cada produto pode variar se o robô falhar em algum ciclo.")
     st.markdown("---")
     st.markdown("© 2025 - Amazon Price Monitor")
 
@@ -237,16 +203,18 @@ df_products, df_prices = get_data()
 
 st.title("💹 Monitor de Preços")
 
+# horário global (mais recente do banco inteiro)
 if not df_prices.empty:
-    last_dt = df_prices["date_local"].max()
-    last_str = last_dt.strftime("%d/%m %H:%M")
+    global_last_dt = df_prices["date_local"].max()
+    last_str = global_last_dt.strftime("%d/%m %H:%M") if pd.notna(global_last_dt) else "--/-- --:--"
 else:
+    global_last_dt = None
     last_str = "--/-- --:--"
 
 col_title, col_last = st.columns([4, 1])
 with col_last:
     st.markdown(
-        f"""<div class="last-update-pill">🕒 Última atualização: <strong>{last_str}</strong></div>""",
+        f"""<div class="last-update-pill">🕒 Último registro no banco: <strong>{last_str}</strong></div>""",
         unsafe_allow_html=True,
     )
 
@@ -274,11 +242,15 @@ for _, product in df_products.iterrows():
             st.image(img_url, width=220)
         st.markdown(f"[Ver na Amazon]({product['url']})")
 
-    # GRÁFICO
+    # GRÁFICO + MÉTRICAS
     with col_graph:
         if df_prod.empty:
             st.info("Sem histórico deste produto ainda.")
         else:
+            # horário mais recente deste produto
+            prod_last_dt = df_prod["date_local"].max()
+            prod_last_str = prod_last_dt.strftime("%d/%m %H:%M") if pd.notna(prod_last_dt) else "--/-- --:--"
+
             fig, ax = plt.subplots(figsize=(6, 2.5))
             sns.lineplot(data=df_prod, x="date_local", y="price", marker="o", ax=ax)
             ax.set_xlabel("Data/Hora (BR)")
@@ -305,12 +277,14 @@ for _, product in df_products.iterrows():
                     ("estável", "neutral")
                 )
 
+                # métricas + horário específico do produto
                 metrics_html = (
                     f'<div>'
                     f'<span class="metric-badge {trend[1]}">Tendência: {trend[0]}</span>'
                     f'<span class="metric-badge">Atual: R$ {last:.2f}</span>'
                     f'<span class="metric-badge">Mín: R$ {min_p:.2f}</span>'
                     f'<span class="metric-badge">Máx: R$ {max_p:.2f}</span>'
+                    f'<span class="metric-badge neutral">Últ.: {prod_last_str}</span>'
                     f'</div>'
                 )
                 st.markdown(metrics_html, unsafe_allow_html=True)
@@ -324,12 +298,19 @@ for _, product in df_products.iterrows():
                     f"**2. Faixa:** mínimo R$ {min_p:.2f}, máximo R$ {max_p:.2f}, média R$ {mean_p:.2f}."
                 )
 
-                if last == min_p:
-                    st.write("**3. Momento:** Preço no mínimo histórico — excelente p/ compra.")
-                elif last == max_p:
-                    st.write("**3. Momento:** Preço no máximo histórico — talvez esperar.")
+                # checa se este produto está muito atrasado em relação ao global
+                if global_last_dt and prod_last_dt and (global_last_dt - prod_last_dt) > timedelta(hours=2):
+                    st.warning(
+                        f"Este produto não recebe dados desde {prod_last_str}. "
+                        "Pode ter ocorrido erro de scraping para ele em alguns ciclos."
+                    )
                 else:
-                    st.write("**3. Momento:** Preço dentro da faixa normal.")
+                    if last == min_p:
+                        st.write("**3. Momento:** Preço no mínimo histórico — excelente p/ compra.")
+                    elif last == max_p:
+                        st.write("**3. Momento:** Preço no máximo histórico — talvez esperar.")
+                    else:
+                        st.write("**3. Momento:** Preço dentro da faixa normal.")
             else:
                 st.write("Dados insuficientes para análises.")
 
