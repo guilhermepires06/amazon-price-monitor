@@ -1,7 +1,7 @@
 import sqlite3
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -11,8 +11,7 @@ import requests
 import streamlit as st
 from bs4 import BeautifulSoup
 
-from utils import extract_price  # função que converte texto de preço em float
-
+from utils import extract_price  # converte texto de preço em float
 
 DB_NAME = "scraping.db"
 
@@ -46,7 +45,7 @@ def ensure_schema():
 ensure_schema()
 
 # =============================================================================
-# CACHE DE HTML
+# CACHE – HTML
 # =============================================================================
 
 
@@ -63,7 +62,6 @@ def cached_html(url: str) -> str:
 
 
 def get_data():
-    """Lê products e prices do SQLite e ajusta campo de data."""
     conn = sqlite3.connect(DB_NAME)
     df_products = pd.read_sql_query("SELECT * FROM products", conn)
     df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
@@ -80,7 +78,6 @@ def get_data():
 
 
 def add_product_to_db(name: str, url: str):
-    """Adiciona um produto no banco (se não existir) e salva image_url."""
     name = name.strip()
     url = url.strip()
 
@@ -140,7 +137,7 @@ def get_latest_price(df_prices: pd.DataFrame, product_id: int):
 
 
 def get_product_image(url: str) -> str | None:
-    """Tenta encontrar a imagem principal do produto na Amazon."""
+    """Tenta achar a imagem principal da Amazon."""
     try:
         html = cached_html(url)
     except Exception:
@@ -267,49 +264,52 @@ st.markdown(
     h1, h2, h3, h4, h5, h6 {
         color: #e5e7eb !important;
     }
+    /* CARD ESTILO MERCADO LIVRE */
     .product-card {
-        padding: 1rem;
-        border-radius: 0.9rem;
+        padding: 0.9rem 0.9rem 0.8rem 0.9rem;
+        border-radius: 0.8rem;
         background: #020617;
-        border: 1px solid rgba(148,163,184,0.3);
-        box-shadow: 0 10px 30px rgba(15,23,42,0.7);
+        border: 1px solid rgba(148,163,184,0.4);
+        box-shadow: 0 10px 25px rgba(15,23,42,0.75);
         text-align: center;
         margin-bottom: 1.5rem;
         display: flex;
         flex-direction: column;
-        align-items: center;
+        align-items: stretch;
         justify-content: flex-start;
-        min-height: 320px;
+        min-height: 280px;
+    }
+    .product-card:hover {
+        border-color: #38bdf8;
+        box-shadow: 0 15px 35px rgba(56,189,248,0.25);
+    }
+    .product-title {
+        font-size: 0.90rem;
+        font-weight: 600;
+        color: #e5e7eb;
+        margin-bottom: 0.5rem;
+        min-height: 2.4em;
     }
     .product-card img {
         max-height: 180px;
         object-fit: contain;
         background: #020617;
-    }
-    .product-header {
-        background: #020617;
-        border-radius: 999px;
-        padding: 4px 12px;
-        margin-bottom: 10px;
-        font-size: 0.90rem;
-        font-weight: 600;
-        text-align: center;
-        color: #e5e7eb;
+        margin-bottom: 0.4rem;
     }
     .product-price {
         font-size: 1.05rem;
-        font-weight: 600;
-        margin-top: 0.4rem;
+        font-weight: 700;
+        margin-top: 0.2rem;
         color: #a5b4fc;
     }
     .detail-card {
         padding: 1.25rem;
         border-radius: 1rem;
         background: #020617;
-        border: 1px solid rgba(148,163,184,0.4);
-        margin-top: 1rem;
+        border: 1px solid rgba(148,163,184,0.5);
+        margin-top: 0.5rem;
         margin-bottom: 1.5rem;
-        box-shadow: 0 18px 45px rgba(15,23,42,0.75);
+        box-shadow: 0 18px 45px rgba(15,23,42,0.9);
     }
     .metric-badge {
         display: inline-block;
@@ -393,13 +393,10 @@ df_products, df_prices = get_data()
 
 st.title("💹 Monitor de Preços")
 
-# Pill de última atualização (usa tabela de preços)
+# Última atualização
 if not df_prices.empty and "date_local" in df_prices.columns:
     last_dt = df_prices["date_local"].max()
-    if pd.notna(last_dt):
-        last_str = last_dt.strftime("%d/%m %H:%M")
-    else:
-        last_str = "--/-- --:--"
+    last_str = last_dt.strftime("%d/%m %H:%M") if pd.notna(last_dt) else "--/-- --:--"
 else:
     last_str = "--/-- --:--"
 
@@ -422,7 +419,7 @@ if df_products.empty:
 sns.set_style("whitegrid")
 
 # -----------------------------------------------------------------------------
-# BLOCO DE DETALHES (CARD FIXO, APARECE QUANDO TEM PRODUTO SELECIONADO)
+# BLOCO DE DETALHES (PAINEL FIXO)
 # -----------------------------------------------------------------------------
 
 selected_id = st.session_state.get("selected_product_id")
@@ -492,7 +489,6 @@ if selected_id is not None and selected_id in df_products["id"].values:
                 plt.xticks(rotation=30)
                 st.pyplot(fig)
 
-                # INSIGHTS
                 st.markdown("### 📌 Insights")
                 df_prod_valid = df_prod.dropna(subset=["price"])
                 if len(df_prod_valid) >= 2:
@@ -578,9 +574,9 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
     with col:
         st.markdown('<div class="product-card">', unsafe_allow_html=True)
 
-        # título no "chip" azul escuro
+        # título dentro do card
         st.markdown(
-            f'<div class="product-header">{product["name"]}</div>',
+            f'<div class="product-title">{product["name"]}</div>',
             unsafe_allow_html=True,
         )
 
