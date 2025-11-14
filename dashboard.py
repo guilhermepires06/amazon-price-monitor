@@ -170,8 +170,13 @@ st.markdown(
 with st.sidebar:
     st.markdown("## Produtos monitorados")
     st.markdown("Interface somente de leitura - Sistema Hospedado no GitHub")
-    st.markdown("-https://github.com/guilhermepires06-")
-
+    st.markdown("https://github.com/guilhermepires06")
+    st.markdown(" ")
+    st.markdown("_____________________________________")
+    st.markdown(" ")
+    st.markdown("Sistema feito por:")
+    st.markdown("Guilherme Pires")
+    st.markdown("Eduardo Feres")
 # =============================================================================
 # CONTEÚDO PRINCIPAL
 # =============================================================================
