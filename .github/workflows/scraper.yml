@@ -39,10 +39,6 @@ def ensure_schema():
     conn.commit()
     conn.close()
 
-
-# ========================================================
-# OBTER CONTEÚDO HTML DE UM PRODUTO
-# ========================================================
 def fetch_product_data(url):
     try:
         response = requests.get(url, headers=HEADERS, timeout=20)
