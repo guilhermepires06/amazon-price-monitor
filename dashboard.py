@@ -64,12 +64,10 @@ def get_data():
 
     # Ajuste de datas
     if "date" in df_prices.columns:
-        # interpreta como UTC (scraper grava datetime em UTC em formato ISO)
         df_prices["date"] = pd.to_datetime(df_prices["date"], utc=True, errors="coerce")
         df_prices = df_prices.dropna(subset=["date"])
         df_prices = df_prices.sort_values("date")
 
-        # converte para horário de São Paulo e remove info de timezone (naive)
         try:
             df_prices["date_local"] = (
                 df_prices["date"]
@@ -77,7 +75,6 @@ def get_data():
                 .dt.tz_localize(None)
             )
         except Exception:
-            # fallback simples, se der qualquer problema: assume -3h
             df_prices["date_local"] = (
                 df_prices["date"].dt.tz_localize(None) - pd.Timedelta(hours=3)
             )
@@ -100,7 +97,6 @@ def get_product_image(url: str):
 
     soup = BeautifulSoup(html, "html.parser")
 
-    # Amazon tenta esconder, então várias tentativas
     img = soup.find("img", {"id": "landingImage"})
     if img and img.get("src"):
         return img["src"]
@@ -135,7 +131,6 @@ def remove_price_outliers(df: pd.DataFrame, col: str = "price") -> pd.DataFrame:
     """
     df_valid = df.dropna(subset=[col]).copy()
     if len(df_valid) < 5:
-        # pouca amostra, não filtra nada
         return df_valid
 
     q1 = df_valid[col].quantile(0.25)
@@ -251,10 +246,9 @@ st.title("💹 Monitor de Preços")
 col_top1, col_top2 = st.columns([4, 1])
 with col_top2:
     if st.button("🔄 Atualizar agora", use_container_width=True):
-        get_data.clear()   # limpa cache do @st.cache_data
-        st.rerun()         # recarrega a página já com dados novos
+        get_data.clear()
+        st.rerun()
 
-# Depois do possível clique, carregamos os dados (já com cache ou frescos)
 df_products, df_prices = get_data()
 
 if not df_prices.empty and df_prices["date_local"].notna().any():
@@ -264,7 +258,7 @@ else:
     global_last_str = "--/-- --:--"
 
 st.markdown(
-    f"""<div class="last-update-pill">🕒 Última atualização: <strong>{global_last_str}</strong></div>""",
+    f"""<div class="last-update-pill">🕒 Última atualização no banco: <strong>{global_last_str}</strong></div>""",
     unsafe_allow_html=True,
 )
 
@@ -279,8 +273,19 @@ sns.set_style("whitegrid")
 for _, product in df_products.iterrows():
 
     df_prod = df_prices[df_prices["product_id"] == product["id"]].copy()
-    prod_last = df_prod["date_local"].max() if not df_prod.empty else None
-    prod_last_str = prod_last.strftime("%d/%m %H:%M") if prod_last is not None else "--:--"
+
+    # últimos registros
+    df_valid_all = df_prod.dropna(subset=["price"])
+    if not df_valid_all.empty:
+        last_valid_dt = df_valid_all["date_local"].max()
+        last_valid_str = last_valid_dt.strftime("%d/%m %H:%M")
+    else:
+        last_valid_dt = None
+        last_valid_str = "--:--"
+
+    # última tentativa (pode ter price = NULL)
+    last_attempt_dt = df_prod["date_local"].max() if not df_prod.empty else None
+    last_attempt_str = last_attempt_dt.strftime("%d/%m %H:%M") if last_attempt_dt is not None else "--:--"
 
     st.markdown('<div class="detail-card">', unsafe_allow_html=True)
     st.markdown(f"### {product['name']}")
@@ -303,7 +308,6 @@ for _, product in df_products.iterrows():
             df_plot = df_prod.copy()
             df_clean = remove_price_outliers(df_plot, "price")
 
-            # zera os outliers apenas no df_plot (para o gráfico ficar “liso”)
             if not df_clean.empty:
                 valid_idx = df_clean.index
                 mask_out = ~df_plot.index.isin(valid_idx)
@@ -320,11 +324,20 @@ for _, product in df_products.iterrows():
             plt.xticks(rotation=25)
             st.pyplot(fig)
 
-            # BADGE DE HORÁRIO
+            # BADGES DE HORÁRIO
             st.markdown(
-                f'<span class="metric-badge neutral">Últ.: {prod_last_str}</span>',
+                f'<span class="metric-badge neutral">Últ. preço válido: {last_valid_str}</span> '
+                f'<span class="metric-badge neutral">Últ. tentativa: {last_attempt_str}</span>',
                 unsafe_allow_html=True,
             )
+
+            # Aviso se a última tentativa não tem preço
+            if last_attempt_dt is not None and not df_prod.empty:
+                last_row = df_prod.sort_values("date_local").iloc[-1]
+                if pd.isna(last_row["price"]):
+                    st.warning(
+                        "Última coleta não retornou preço — o gráfico usa o valor anterior."
+                    )
 
             # -------- INSIGHTS (USANDO df_clean, SEM OUTLIERS) --------
             if len(df_clean) >= 2:
