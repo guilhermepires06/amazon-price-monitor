@@ -265,28 +265,20 @@ st.markdown(
         color: #e5e7eb !important;
     }
 
-    /* ===========================
-       CARD ESTILO MERCADO LIVRE
-       =========================== */
-    .product-card {
-        padding: 0.9rem 0.9rem 0.8rem 0.9rem;
-        border-radius: 0.8rem;
+    /* FLAG usada para identificar o container do card */
+    .product-card-flag {
+        display: none;
+    }
+
+    /* O PAI que contém a flag vira o CARD */
+    div:has(> .product-card-flag) {
         background: #020617;
+        border-radius: 0.8rem;
         border: 1px solid rgba(148,163,184,0.4);
         box-shadow: 0 10px 25px rgba(15,23,42,0.75);
-        text-align: center;
+        padding: 0.9rem 0.9rem 0.8rem 0.9rem;
         margin-bottom: 1.5rem;
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
-        justify-content: flex-start;
-        /* altura fixa para todos os cards ficarem iguais */
-        height: 380px;
-        box-sizing: border-box;
-    }
-    .product-card:hover {
-        border-color: #38bdf8;
-        box-shadow: 0 15px 35px rgba(56,189,248,0.25);
+        min-height: 360px; /* força altura parecida entre todos */
     }
 
     .product-title {
@@ -294,19 +286,11 @@ st.markdown(
         font-weight: 600;
         color: #e5e7eb;
         margin-bottom: 0.5rem;
-        /* Altura fixa + truncamento em 2 linhas */
         min-height: 2.6em;
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
-    }
-
-    .product-card img {
-        max-height: 180px;
-        object-fit: contain;
-        background: #020617;
-        margin-bottom: 0.4rem;
     }
 
     .product-price {
@@ -490,7 +474,6 @@ if selected_id is not None and selected_id in df_products["id"].values:
                         st.info("Imagem removida.")
                     st.rerun()
             with del_col:
-                # 👇 AQUI estava o erro: antes tinha um ']' no final
                 if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
                     delete_product_from_db(product["id"])
                     st.success("Produto removido.")
@@ -584,7 +567,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ----------------------------------------------------------------------------- #
-# GRID DE CARDS — ALINHADO E FUNCIONAL
+# GRID DE CARDS – PRODUTOS MONITORADOS
 # ----------------------------------------------------------------------------- #
 
 st.markdown("## Produtos monitorados")
@@ -595,102 +578,67 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
     col = cols[idx % 3]
 
     with col:
-
-        # ===============================
-        # CARD REAL (USANDO CONTAINER)
-        # ===============================
-        card = st.container()
-
-        with card:
-
-            st.markdown("""
-                <style>
-                .card-box {
-                    background: #020617;
-                    border: 1px solid rgba(148,163,184,0.4);
-                    border-radius: 12px;
-                    padding: 14px;
-                    display: flex;
-                    flex-direction: column;
-                    justify-content: space-between;
-                    height: 420px;       /* FORÇA TODOS IGUAIS */
-                    box-shadow: 0 10px 25px rgba(0,0,0,0.35);
-                }
-                .card-title {
-                    font-size: 0.90rem;
-                    font-weight: 600;
-                    color: #e5e7eb;
-                    margin-bottom: 8px;
-                    min-height: 2.8em;     /* TRUNCA EM 2 LINHAS */
-                    display: -webkit-box;
-                    -webkit-line-clamp: 2;
-                    -webkit-box-orient: vertical;
-                    overflow: hidden;
-                }
-                .img-wrapper {
-                    height: 180px;         /* ÁREA FIXA DA IMAGEM */
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin-bottom: 10px;
-                }
-                </style>
-            """, unsafe_allow_html=True)
-
-            st.markdown('<div class="card-box">', unsafe_allow_html=True)
+        # Container lógico do Streamlit
+        with st.container():
+            # FLAG para o CSS identificar este bloco como card
+            st.markdown('<div class="product-card-flag"></div>', unsafe_allow_html=True)
 
             # TÍTULO
             st.markdown(
-                f'<div class="card-title">{product["name"]}</div>',
-                unsafe_allow_html=True
+                f'<div class="product-title">{product["name"]}</div>',
+                unsafe_allow_html=True,
             )
 
             # IMAGEM
-            img_url = product.get("image_url") or get_product_image(product["url"])
-
-            st.markdown('<div class="img-wrapper">', unsafe_allow_html=True)
+            img_url = product.get("image_url")
+            if not img_url:
+                img_url = get_product_image(product["url"])
 
             if img_url:
-                st.image(img_url, width=210)
+                st.image(img_url, width=230)
             else:
-                st.markdown("""
+                st.markdown(
+                    """
                     <div style="
-                        width:210px;
-                        height:160px;
-                        background:#111827;
-                        border-radius:8px;
-                        border:1px solid #334155;
-                        display:flex;
-                        align-items:center;
-                        justify-content:center;
-                        font-size:0.8rem;
-                        color:#64748b;">
-                        Sem imagem
+                        width: 230px;
+                        height: 180px;
+                        background: #111827;
+                        border-radius: 8px;
+                        border: 1px solid #334155;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 0.8rem;
+                        color: #64748b;
+                        margin: 0 auto 0.4rem auto;">
+                        Imagem indisponível
                     </div>
-                """, unsafe_allow_html=True)
-
-            st.markdown('</div>', unsafe_allow_html=True)
+                    """,
+                    unsafe_allow_html=True,
+                )
 
             # PREÇO
             latest_price = get_latest_price(df_prices, product["id"])
             if latest_price is not None:
-                st.markdown(f"**R$ {latest_price:.2f}**")
+                st.markdown(
+                    f'<div class="product-price">R$ {latest_price:.2f}</div>',
+                    unsafe_allow_html=True,
+                )
             else:
-                st.markdown("**Sem preço ainda**")
+                st.markdown(
+                    '<div class="product-price">Sem preço ainda</div>',
+                    unsafe_allow_html=True,
+                )
 
-            # BOTÕES ALINHADOS NA BASE
+            # BOTÕES
             b1, b2 = st.columns(2)
-
             with b1:
                 if st.button("Ver detalhes", key=f"view_{product['id']}"):
                     st.session_state["selected_product_id"] = product["id"]
                     st.rerun()
-
             with b2:
                 if st.button("🗑 Excluir", key=f"del_{product['id']}"):
                     delete_product_from_db(product["id"])
                     if st.session_state.get("selected_product_id") == product["id"]:
                         st.session_state["selected_product_id"] = None
                     st.rerun()
-
-            st.markdown('</div>', unsafe_allow_html=True)  # fecha card-box
