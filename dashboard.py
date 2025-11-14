@@ -213,7 +213,7 @@ with st.sidebar:
     )
     st.markdown("---")
     st.markdown("**Sistema desenvolvido por:**")
-    st.markdown("🧠 Eduardo Feres\n👨‍💻 Guilherme Pires")
+    st.markdown("🧠 Eduardo Feres\n 👨‍💻 Guilherme Pires")
     st.markdown("---")
     st.markdown("📌 *Dashboard somente leitura (não altera o banco).*")
     st.markdown("© 2025 - Amazon Price Monitor")
