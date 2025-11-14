@@ -1,6 +1,7 @@
 import sqlite3
 import time
 from datetime import datetime, timezone
+import statistics
 
 import requests
 from bs4 import BeautifulSoup
@@ -67,6 +68,81 @@ def ensure_schema():
 
 
 # =============================================================================
+# FUNÇÕES AUXILIARES DE HISTÓRICO / OUTLIER
+# =============================================================================
+
+def get_price_stats(conn: sqlite3.Connection, product_id: int):
+    """
+    Busca últimos preços válidos de um produto e calcula estatísticas básicas.
+
+    Retorna dict com:
+        {
+            "count": int,
+            "median": float,
+            "mean": float,
+            "min": float,
+            "max": float,
+        }
+    ou None se não tiver dados suficientes.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT price
+        FROM prices
+        WHERE product_id = ? AND price IS NOT NULL
+        ORDER BY date DESC
+        LIMIT 30
+        """,
+        (product_id,),
+    )
+    rows = [r[0] for r in cur.fetchall() if r[0] is not None and r[0] > 0]
+
+    if len(rows) < 3:
+        return None
+
+    try:
+        med = statistics.median(rows)
+        mean = statistics.mean(rows)
+    except statistics.StatisticsError:
+        return None
+
+    return {
+        "count": len(rows),
+        "median": med,
+        "mean": mean,
+        "min": min(rows),
+        "max": max(rows),
+    }
+
+
+def is_price_outlier(new_price: float, stats: dict, up_factor: float = 3.0, down_factor: float = 0.33) -> bool:
+    """
+    Decide se o novo preço é muito diferente do histórico.
+
+    Regra:
+      - se new_price > median * up_factor  -> outlier (pico absurdo)
+      - se new_price < median * down_factor -> outlier (queda absurda)
+    """
+    if stats is None:
+        # sem histórico suficiente -> não dá pra julgar
+        return False
+
+    median = stats["median"]
+
+    if median <= 0:
+        return False
+
+    if new_price > median * up_factor:
+        return True
+
+    if new_price < median * down_factor:
+        return True
+
+    return False
+
+
+# =============================================================================
 # FUNÇÕES DE SCRAPING
 # =============================================================================
 
@@ -87,7 +163,11 @@ def fetch_html(url: str, timeout: int = 25) -> str | None:
 def parse_price_from_html(html: str) -> float | None:
     """
     Tenta extrair o preço a partir do HTML usando vários seletores.
-    Se falhar, usa extract_price() em cima do texto da página.
+
+    IMPORTANTE:
+    - Não usamos mais o fallback que varre o texto da página inteira,
+      pra evitar pegar números malucos (como 1996) que estejam em scripts,
+      banners, preços antigos etc.
     """
     soup = BeautifulSoup(html, "html.parser")
 
@@ -96,7 +176,6 @@ def parse_price_from_html(html: str) -> float | None:
         "priceblock_ourprice",
         "priceblock_dealprice",
         "priceblock_saleprice",
-        "corePrice_feature_div",
     ]:
         span = soup.find("span", id=span_id)
         if span and span.get_text(strip=True):
@@ -104,25 +183,32 @@ def parse_price_from_html(html: str) -> float | None:
             if price is not None and price > 1:
                 return price
 
-    # 2) Estrutura nova: .a-price .a-offscreen
+    # 2) Estrutura nova: preço principal no corePrice_feature_div
+    core_price_span = soup.select_one("#corePrice_feature_div span.a-offscreen")
+    if core_price_span and core_price_span.get_text(strip=True):
+        price = extract_price(core_price_span.get_text())
+        if price is not None and price > 1:
+            return price
+
+    # 3) Qualquer span com a classe a-price > .a-offscreen (normalmente é o preço principal)
     span = soup.select_one(".a-price .a-offscreen")
     if span and span.get_text(strip=True):
         price = extract_price(span.get_text())
         if price is not None and price > 1:
             return price
 
-    # 3) Qualquer span com a classe a-offscreen
+    # 4) Qualquer span.a-offscreen (mais genérico, mas ainda limitado a elementos de preço)
     span = soup.select_one("span.a-offscreen")
     if span and span.get_text(strip=True):
         price = extract_price(span.get_text())
         if price is not None and price > 1:
             return price
 
-    # 4) Fallback: usa todo o texto da página
-    text = soup.get_text(" ", strip=True)
-    price = extract_price(text)
-    if price is not None and price > 1:
-        return price
+    # NÃO usar mais fallback em todo o texto:
+    # text = soup.get_text(" ", strip=True)
+    # price = extract_price(text)
+    # if price is not None and price > 1:
+    #     return price
 
     return None
 
@@ -141,8 +227,8 @@ def get_price_with_retries(url: str, attempts: int = 3, delay: int = 4) -> float
 
         price = parse_price_from_html(html)
         if price is not None and price > 1:
-            print(f"  [OK] Preço encontrado: R$ {price:.2f}")
-            return price
+            print(f"  [OK] Preço encontrado bruto: R$ {price:.2f}")
+            return float(round(price, 2))
 
         print("  [WARN] Preço não encontrado ou inválido, tentando de novo...")
         time.sleep(delay)
@@ -178,6 +264,7 @@ def run_scraper():
 
     sucessos = 0
     falhas = 0
+    outliers = 0
 
     for pid, name, url in products:
         print(f"\n[PRODUTO] ID {pid} - {name}")
@@ -185,7 +272,24 @@ def run_scraper():
 
         if price is None:
             falhas += 1
-            print(f"[WARN] Produto '{name}': preço não será registrado nesta rodada.")
+            print(f"[WARN] Produto '{name}': preço não será registrado nesta rodada (None).")
+            continue
+
+        # verifica se o preço é muito diferente do histórico
+        stats = get_price_stats(conn, pid)
+        if is_price_outlier(price, stats):
+            outliers += 1
+            if stats:
+                print(
+                    f"[OUTLIER] Preço {price:.2f} muito diferente da mediana "
+                    f"{stats['median']:.2f} (histórico {stats['count']} pontos). "
+                    "Valor IGNORADO, não será salvo no banco."
+                )
+            else:
+                print(
+                    "[OUTLIER] Preço marcado como outlier, mas sem estatísticas "
+                    "detalhadas disponíveis. Valor IGNORADO."
+                )
             continue
 
         # insere registro na tabela prices
@@ -199,7 +303,11 @@ def run_scraper():
 
     conn.close()
     print(
-        f"\n[RESUMO] Rodada finalizada. Sucessos: {sucessos} | Falhas (sem preço): {falhas} | Timestamp: {now_str} (UTC)"
+        f"\n[RESUMO] Rodada finalizada."
+        f" Sucessos: {sucessos}"
+        f" | Falhas (sem preço): {falhas}"
+        f" | Outliers ignorados: {outliers}"
+        f" | Timestamp: {now_str} (UTC)"
     )
 
 
