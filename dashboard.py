@@ -169,8 +169,8 @@ st.markdown(
 
 with st.sidebar:
     st.markdown("## Produtos monitorados")
-    st.markdown("Interface somente de leitura — dados vêm do `scraping.db`.")
-    st.markdown("---")
+    st.markdown("Interface somente de leitura - Sistema Hospedado no GitHub")
+    st.markdown("-https://github.com/guilhermepires06-")
 
 # =============================================================================
 # CONTEÚDO PRINCIPAL
