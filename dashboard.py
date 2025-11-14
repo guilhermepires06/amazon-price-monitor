@@ -443,28 +443,30 @@ st.markdown(
     #detail-modal-flag { display: none; }
 
     div[data-testid="stVerticalBlock"]:has(#detail-modal-flag) {
-        position: fixed;
-        inset: 0;
-        background: rgba(15,23,42,0.88);
-        z-index: 9999;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 2rem 3rem;
-    }
+    position: fixed;
+    inset: 0;
+    background: rgba(15,23,42,0.78); /* antes 0.88 → mais suave */
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem; /* antes 2rem 3rem */
+}
 
-    .detail-modal-card {
-        position: relative;
-        max-width: 1100px;
-        width: 100%;
-        max-height: 90vh;
-        overflow-y: auto;
-        padding: 1.4rem 1.5rem 1.1rem 1.5rem;
-        border-radius: 1.1rem;
-        background: radial-gradient(circle at top left, #020617, #020617 45%, #020617 100%);
-        border: 1px solid rgba(148,163,184,0.6);
-        box-shadow: 0 24px 70px rgba(15,23,42,1);
-    }
+
+   .detail-modal-card {
+    position: relative;
+    max-width: 750px;    /* antes era 1100px */
+    width: 100%;
+    max-height: 75vh;    /* antes 90vh */
+    overflow-y: auto;
+    padding: 1rem 1.2rem; /* antes 1.4rem 1.5rem */
+    border-radius: 0.9rem;
+    background: radial-gradient(circle at top left, #020617, #020617 45%, #020617 100%);
+    border: 1px solid rgba(148,163,184,0.6);
+    box-shadow: 0 18px 55px rgba(15,23,42,1);
+}
+
     .detail-modal-card::before {
         content: "";
         position: absolute;
