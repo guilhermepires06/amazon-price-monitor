@@ -280,7 +280,7 @@ st.markdown(
         flex-direction: column;
         align-items: stretch;
         justify-content: flex-start;
-        /* AQUI: altura fixa para todos os cards ficarem iguais */
+        /* altura fixa para todos os cards ficarem iguais */
         height: 380px;
         box-sizing: border-box;
     }
@@ -386,7 +386,10 @@ with st.sidebar:
                 st.success(msg)
                 conn = sqlite3.connect(DB_NAME)
                 cursor = conn.cursor()
-                cursor.execute("SELECT id FROM products WHERE url = ?", (new_url.strip(),))
+                cursor.execute(
+                    "SELECT id FROM products WHERE url = ?",
+                    (new_url.strip(),),
+                )
                 row = cursor.fetchone()
                 conn.close()
                 if row:
@@ -487,7 +490,8 @@ if selected_id is not None and selected_id in df_products["id"].values:
                         st.info("Imagem removida.")
                     st.rerun()
             with del_col:
-                if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"]:
+                # 👇 AQUI estava o erro: antes tinha um ']' no final
+                if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
                     delete_product_from_db(product["id"])
                     st.success("Produto removido.")
                     st.session_state["selected_product_id"] = None
@@ -582,14 +586,13 @@ if selected_id is not None and selected_id in df_products["id"].values:
 # ----------------------------------------------------------------------------- #
 # GRID DE CARDS
 # ----------------------------------------------------------------------------- #
-# ============= GRID DE CARDS =============
+
 st.markdown("## Produtos monitorados")
 
-NUM_COLS = 3
-cols = st.columns(NUM_COLS, gap="large")
+cols = st.columns(3, gap="large")
 
 for idx, (_, product) in enumerate(df_products.iterrows()):
-    col = cols[idx % NUM_COLS]
+    col = cols[idx % 3]
     with col:
         st.markdown('<div class="product-card">', unsafe_allow_html=True)
 
@@ -599,19 +602,19 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
             unsafe_allow_html=True,
         )
 
-        # imagem
         img_url = product.get("image_url")
         if not img_url:
             img_url = get_product_image(product["url"])
 
         if img_url:
+            # imagem respeita o max-height do CSS, mantendo altura do card
             st.image(img_url, width=230)
         else:
             st.markdown(
                 """
                 <div style="
                     width: 230px;
-                    height: 150px;
+                    height: 180px;
                     background: #111827;
                     border-radius: 8px;
                     border: 1px solid #334155;
@@ -620,14 +623,13 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                     justify-content: center;
                     font-size: 0.8rem;
                     color: #64748b;
-                    margin: 0 auto;">
+                    margin: 0 auto 0.4rem auto;">
                     Imagem indisponível
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-        # preço
         latest_price = get_latest_price(df_prices, product["id"])
         if latest_price is not None:
             st.markdown(
@@ -640,7 +642,6 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                 unsafe_allow_html=True,
             )
 
-        # botões
         b1, b2 = st.columns(2)
         with b1:
             if st.button("Ver detalhes", key=f"view_{product['id']}"):
