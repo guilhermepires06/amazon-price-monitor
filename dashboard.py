@@ -22,7 +22,6 @@ DB_NAME = "scraping.db"
 # URL RAW do banco no GitHub (ATUALMENTE NÃO ESTÁ SENDO USADA)
 GITHUB_DB_URL = "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"
 
-
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -106,7 +105,7 @@ def get_data():
 
     ATENÇÃO:
     - NÃO sincroniza com o GitHub aqui.
-    - Assim, tudo que você adicionar/excluir na interface permanece no arquivo scraping.db.
+    - Assim, tudo que você alterar via scraper permanece no arquivo scraping.db.
     """
     conn = sqlite3.connect(DB_NAME)
     df_products = pd.read_sql_query("SELECT * FROM products", conn)
@@ -123,32 +122,6 @@ def get_data():
     return df_products, df_prices
 
 
-def add_product_to_db(name: str, url: str):
-    name = name.strip()
-    url = url.strip()
-
-    if not url:
-        return False, "Informe uma URL válida."
-
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT id FROM products WHERE url = ?", (url,))
-    if cursor.fetchone():
-        conn.close()
-        return False, "Este produto já está cadastrado."
-
-    image_url = get_product_image(url)
-
-    cursor.execute(
-        "INSERT INTO products (name, url, image_url) VALUES (?, ?, ?)",
-        (name, url, image_url),
-    )
-    conn.commit()
-    conn.close()
-    return True, "Produto cadastrado com sucesso!"
-
-
 def update_product_image(product_id: int, image_url: str | None):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
@@ -156,15 +129,6 @@ def update_product_image(product_id: int, image_url: str | None):
         "UPDATE products SET image_url = ? WHERE id = ?",
         (image_url, product_id),
     )
-    conn.commit()
-    conn.close()
-
-
-def delete_product_from_db(product_id: int):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM prices WHERE product_id = ?", (product_id,))
-    cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
     conn.commit()
     conn.close()
 
@@ -233,56 +197,6 @@ def get_product_image(url: str) -> str | None:
                 return m.group(1).replace("\\/", "/")
 
     return None
-
-
-def fetch_product_title(url: str) -> str | None:
-    try:
-        html = cached_html(url)
-    except Exception:
-        return None
-
-    soup = BeautifulSoup(html, "html.parser")
-    title_tag = soup.find(id="productTitle")
-    if title_tag:
-        return title_tag.get_text(strip=True)
-    return None
-
-
-def scrape_single_product(product_id: int, url: str):
-    """Coleta o preço de UM produto e grava na tabela prices."""
-    try:
-        html = cached_html(url)
-    except Exception:
-        return
-
-    soup = BeautifulSoup(html, "html.parser")
-
-    price_whole = soup.find("span", class_="a-price-whole")
-    price_fraction = soup.find("span", class_="a-price-fraction")
-    if price_whole and price_fraction:
-        full_price_str = f"{price_whole.text.strip()},{price_fraction.text.strip()}"
-    elif price_whole:
-        full_price_str = price_whole.text.strip()
-    else:
-        full_price_str = None
-
-    price = extract_price(full_price_str)
-
-    old_price_tag = soup.find("span", class_="a-text-price")
-    old_price_str = old_price_tag.get_text(strip=True) if old_price_tag else None
-    old_price = extract_price(old_price_str)
-
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        INSERT INTO prices (product_id, price, old_price)
-        VALUES (?, ?, ?)
-        """,
-        (product_id, price, old_price),
-    )
-    conn.commit()
-    conn.close()
 
 
 # =============================================================================
@@ -378,52 +292,20 @@ st.markdown(
 )
 
 # =============================================================================
-# SIDEBAR – CADASTRO
+# SIDEBAR – APENAS INFORMAÇÃO (SEM CADASTRO)
 # =============================================================================
 
 with st.sidebar:
-    st.markdown("## ➕ Adicionar produto da Amazon")
+    st.markdown("## Produtos monitorados")
     st.write(
-        "Cole a URL de um produto da Amazon e, se quiser, personalize o nome. "
-        "O sistema tentará buscar automaticamente o título e a imagem."
+        "Os produtos deste painel são gerenciados pelo scraper e pelo "
+        "banco de dados `scraping.db`. Esta interface é apenas para "
+        "visualização dos preços e gráficos."
     )
-
-    new_url = st.text_input("URL do produto na Amazon")
-    new_name = st.text_input("Nome do produto (opcional)")
-
-    if st.button("Adicionar produto"):
-        if not new_url.strip():
-            st.error("Informe a URL do produto.")
-        else:
-            name_to_use = new_name.strip()
-            if not name_to_use:
-                st.info("Buscando título automaticamente na Amazon...")
-                auto_title = fetch_product_title(new_url)
-                name_to_use = auto_title or "Produto Amazon"
-
-            ok, msg = add_product_to_db(name_to_use, new_url)
-            if ok:
-                st.success(msg)
-                conn = sqlite3.connect(DB_NAME)
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT id FROM products WHERE url = ?",
-                    (new_url.strip(),),
-                )
-                row = cursor.fetchone()
-                conn.close()
-                if row:
-                    product_id = row[0]
-                    scrape_single_product(product_id, new_url.strip())
-                    st.session_state["selected_product_id"] = product_id
-                st.rerun()
-            else:
-                st.warning(msg)
-
     st.markdown("---")
     st.caption(
-        "Este painel lê e grava diretamente no banco local **`scraping.db`**.\n"
-        "O GitHub não está mais sobrescrevendo seus cadastros."
+        "Este painel lê diretamente o banco local **`scraping.db`**.\n"
+        "Adições/remoções de produtos devem ser feitas fora da interface."
     )
 
 # =============================================================================
@@ -454,16 +336,24 @@ with col_last:
     )
 
 if df_products.empty:
-    st.warning("Nenhum produto cadastrado. Adicione um produto na barra lateral.")
+    st.warning("Nenhum produto cadastrado no banco. Cadastre produtos no scraping.db.")
     st.stop()
 
 sns.set_style("whitegrid")
 
 # ----------------------------------------------------------------------------- #
-# BLOCO DE DETALHES
+# DEFINIR PRODUTO SELECIONADO (GRÁFICO FIXO NA TELA)
 # ----------------------------------------------------------------------------- #
 
-selected_id = st.session_state.get("selected_product_id")
+if "selected_product_id" not in st.session_state:
+    # seleciona o primeiro produto por padrão
+    st.session_state["selected_product_id"] = int(df_products["id"].iloc[0])
+
+selected_id = st.session_state["selected_product_id"]
+
+# ----------------------------------------------------------------------------- #
+# BLOCO DE DETALHES (GRÁFICO SEM BOTÃO DE FECHAR)
+# ----------------------------------------------------------------------------- #
 
 if selected_id is not None and selected_id in df_products["id"].values:
     product = df_products[df_products["id"] == selected_id].iloc[0]
@@ -473,13 +363,8 @@ if selected_id is not None and selected_id in df_products["id"].values:
     with st.container():
         st.markdown('<div class="detail-card">', unsafe_allow_html=True)
 
-        top_cols = st.columns([6, 1])
-        with top_cols[0]:
-            st.markdown(f"### {product['name']}")
-        with top_cols[1]:
-            if st.button("Fechar detalhes"):
-                st.session_state["selected_product_id"] = None
-                st.rerun()
+        # título simples, sem botão de fechar
+        st.markdown(f"### {product['name']}")
 
         col_img, col_graph = st.columns([1, 2])
 
@@ -499,22 +384,14 @@ if selected_id is not None and selected_id in df_products["id"].values:
                 key=f"manual_img_{product['id']}",
             )
 
-            save_col, del_col = st.columns(2)
-            with save_col:
-                if st.button("Salvar imagem", key=f"save_img_{product['id']}"):
-                    if manual_img.strip():
-                        update_product_image(product["id"], manual_img.strip())
-                        st.success("Imagem atualizada com sucesso.")
-                    else:
-                        update_product_image(product["id"], None)
-                        st.info("Imagem removida.")
-                    st.rerun()
-            with del_col:
-                if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
-                    delete_product_from_db(product["id"])
-                    st.success("Produto removido.")
-                    st.session_state["selected_product_id"] = None
-                    st.rerun()
+            if st.button("Salvar imagem", key=f"save_img_{product['id']}"):
+                if manual_img.strip():
+                    update_product_image(product["id"], manual_img.strip())
+                    st.success("Imagem atualizada com sucesso.")
+                else:
+                    update_product_image(product["id"], None)
+                    st.info("Imagem removida.")
+                st.rerun()
 
         with col_graph:
             st.write("**Histórico de Preços**")
@@ -601,7 +478,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ----------------------------------------------------------------------------- #
-# GRID DE CARDS – PRODUTOS MONITORADOS
+# GRID DE CARDS – PRODUTOS MONITORADOS (SEM EXCLUIR)
 # ----------------------------------------------------------------------------- #
 
 st.markdown("## Produtos monitorados")
@@ -658,14 +535,7 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                     unsafe_allow_html=True,
                 )
 
-            b1, b2 = st.columns(2)
-            with b1:
-                if st.button("Ver detalhes", key=f"view_{product['id']}"):
-                    st.session_state["selected_product_id"] = product["id"]
-                    st.rerun()
-            with b2:
-                if st.button("🗑 Excluir", key=f"del_{product['id']}"):
-                    delete_product_from_db(product["id"])
-                    if st.session_state.get("selected_product_id") == product["id"]:
-                        st.session_state["selected_product_id"] = None
-                    st.rerun()
+            # apenas botão de ver detalhes, sem excluir
+            if st.button("Ver detalhes", key=f"view_{product['id']}"):
+                st.session_state["selected_product_id"] = product["id"]
+                st.rerun()
