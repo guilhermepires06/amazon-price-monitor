@@ -1,22 +1,17 @@
 import sqlite3
-import json
-from datetime import datetime, timedelta
+import time
+from datetime import datetime, timezone
+import statistics
 
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-import pandas as pd
-import seaborn as sns
 import requests
-import streamlit as st
 from bs4 import BeautifulSoup
 
 from utils import extract_price
 
 # =============================================================================
-# CONFIG BÁSICA
+# CONFIG
 # =============================================================================
 
-# Banco LOCAL que vem dentro do repositório (atualizado pelo scraper rodando no seu PC)
 DB_NAME = "scraping.db"
 
 HEADERS = {
@@ -28,312 +23,364 @@ HEADERS = {
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
+# Ativa ou não o filtro de outlier por histórico
+USE_OUTLIER_FILTER = True
+
+
 # =============================================================================
-# BANCO – LENDO scraping.db LOCAL
+# BANCO / SCHEMA
 # =============================================================================
 
-@st.cache_data(show_spinner=False, ttl=60)
-def get_data():
+def get_conn():
+    return sqlite3.connect(DB_NAME)
+
+
+def ensure_schema():
     """
-    Lê o scraping.db local (o mesmo que está no repositório).
-
-    • O arquivo scraping.db é gerado/atualizado pelo scraper rodando na sua máquina.
-    • Você faz commit/push desse arquivo para o GitHub.
-    • O Streamlit carrega exatamente esse arquivo que está no repositório.
-
-    • Se der erro para abrir/ler, mostra st.error e retorna DataFrames vazios.
-    • Converte o campo `date` (UTC) para `date_local` (horário de Brasília).
+    Garante que as tabelas products e prices existam.
+    Não apaga nada, só cria se não existir.
     """
-    try:
-        conn = sqlite3.connect(DB_NAME)
-    except Exception as e:
-        st.error(f"❌ Erro ao abrir o banco local '{DB_NAME}': {e}")
-        return pd.DataFrame(), pd.DataFrame()
+    conn = get_conn()
+    cur = conn.cursor()
 
-    try:
-        df_products = pd.read_sql_query("SELECT * FROM products", conn)
-        df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
-    except Exception as e:
-        st.error(f"❌ Erro ao ler tabelas do banco '{DB_NAME}': {e}")
-        conn.close()
-        return pd.DataFrame(), pd.DataFrame()
-    finally:
-        conn.close()
-
-    # Ajuste de datas
-    if "date" in df_prices.columns:
-        df_prices["date"] = pd.to_datetime(
-            df_prices["date"], utc=True, errors="coerce"
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            url TEXT NOT NULL,
+            image_url TEXT
         )
-        df_prices = df_prices.dropna(subset=["date"])
-        df_prices = df_prices.sort_values("date")
+        """
+    )
 
-        try:
-            df_prices["date_local"] = (
-                df_prices["date"]
-                .dt.tz_convert("America/Sao_Paulo")
-                .dt.tz_localize(None)
-            )
-        except Exception:
-            df_prices["date_local"] = (
-                df_prices["date"].dt.tz_localize(None) - pd.Timedelta(hours=3)
-            )
-    else:
-        df_prices["date_local"] = pd.NaT
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS prices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL,
+            price REAL,
+            date TEXT NOT NULL,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )
+        """
+    )
 
-    return df_products, df_prices
+    conn.commit()
+    conn.close()
 
 
 # =============================================================================
-# SCRAPING IMAGEM (SOMENTE PARA O THUMB DA PÁGINA)
+# FUNÇÕES AUXILIARES DE HISTÓRICO / OUTLIER
 # =============================================================================
 
-@st.cache_data(show_spinner=False, ttl=60 * 60)
-def get_product_image(url: str):
-    try:
-        html = requests.get(url, headers=HEADERS, timeout=20).text
-    except Exception:
+def get_price_stats(conn: sqlite3.Connection, product_id: int):
+    """
+    Busca últimos preços válidos de um produto e calcula estatísticas básicas.
+
+    Retorna dict com:
+        {
+            "count": int,
+            "median": float,
+            "mean": float,
+            "min": float,
+            "max": float,
+        }
+    ou None se não tiver dados suficientes.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT price
+        FROM prices
+        WHERE product_id = ? AND price IS NOT NULL
+        ORDER BY date DESC
+        LIMIT 30
+        """,
+        (product_id,),
+    )
+    rows = [r[0] for r in cur.fetchall() if r[0] is not None and r[0] > 0]
+
+    if len(rows) < 3:
         return None
 
-    soup = BeautifulSoup(html, "html.parser")
+    try:
+        med = statistics.median(rows)
+        mean = statistics.mean(rows)
+    except statistics.StatisticsError:
+        return None
 
-    img = soup.find("img", {"id": "landingImage"})
-    if img and img.get("src"):
-        return img["src"]
+    return {
+        "count": len(rows),
+        "median": med,
+        "mean": mean,
+        "min": min(rows),
+        "max": max(rows),
+    }
 
-    img = soup.find("img", attrs={"data-old-hires": True})
-    if img and img.get("data-old-hires"):
-        return img["data-old-hires"]
 
-    img = soup.find("img", attrs={"data-a-dynamic-image": True})
-    if img:
-        try:
-            dyn = json.loads(img["data-a-dynamic-image"])
-            return list(dyn.keys())[0]
-        except Exception:
-            pass
+def is_price_outlier(new_price: float, stats: dict,
+                     up_factor: float = 3.0,
+                     down_factor: float = 0.33) -> bool:
+    """
+    Decide se o novo preço é muito diferente do histórico.
 
-    meta = soup.find("meta", {"property": "og:image"})
-    if meta:
-        return meta.get("content")
+    Regra:
+      - se new_price > median * up_factor  -> outlier (pico absurdo)
+      - se new_price < median * down_factor -> outlier (queda absurda)
+    """
+    if stats is None:
+        # sem histórico suficiente -> não dá pra julgar
+        return False
+
+    median = stats["median"]
+
+    if median <= 0:
+        return False
+
+    if new_price > median * up_factor:
+        return True
+
+    if new_price < median * down_factor:
+        return True
+
+    return False
+
+
+# =============================================================================
+# FUNÇÕES DE SCRAPING
+# =============================================================================
+
+def fetch_html(url: str, timeout: int = 25) -> str | None:
+    """
+    Faz GET na página da Amazon e retorna o HTML em texto.
+    Retorna None em caso de erro.
+    """
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=timeout)
+        resp.raise_for_status()
+        return resp.text
+    except Exception as e:
+        print(f"[ERRO] Falha ao buscar HTML de {url}: {e}")
+        return None
+
+
+def _parse_price_from_price_block(block) -> float | None:
+    """
+    Dado um 'bloco de preço' (div/span com a estrutura da Amazon),
+    monta o valor usando:
+        - span.a-price-whole (parte inteira, com ponto de milhar)
+        - span.a-price-fraction (centavos)
+    e converte com extract_price.
+
+    Retorna float ou None.
+    """
+    if block is None:
+        return None
+
+    whole_span = block.select_one("span.a-price-whole")
+    if not whole_span:
+        return None
+
+    fraction_span = block.select_one("span.a-price-fraction")
+
+    # Pega apenas dígitos da parte inteira (remove ponto, vírgula e espaços)
+    whole_raw = whole_span.get_text(strip=True)
+    whole_digits = "".join(ch for ch in whole_raw if ch.isdigit())
+
+    if not whole_digits:
+        return None
+
+    if fraction_span:
+        fraction_raw = fraction_span.get_text(strip=True)
+        fraction_digits = "".join(ch for ch in fraction_raw if ch.isdigit())
+        if not fraction_digits:
+            fraction_digits = "00"
+    else:
+        fraction_digits = "00"
+
+    # Monta string estilo BR: R$ 2116,05
+    price_str = f"R$ {whole_digits},{fraction_digits}"
+
+    price = extract_price(price_str)
+    if price is not None and price > 1:
+        return price
 
     return None
 
 
-# =============================================================================
-# UI / CSS
-# =============================================================================
-
-st.set_page_config(
-    page_title="Monitor de Preços Amazon (v2)",
-    layout="wide",
-    page_icon="💹",
-)
-
-st.markdown(
+def parse_price_from_html(html: str) -> float | None:
     """
-<style>
+    Tenta extrair o preço a partir do HTML usando vários seletores.
 
-/* SIDEBAR FIXA */
-[data-testid="stSidebar"] {
-    position: fixed !important;
-    top:0;
-    left:0;
-    height: 100vh !important;
-    z-index: 999;
-    overflow-y: auto !important;
-}
+    NOVA LÓGICA:
+      - Coleta TODOS os preços possíveis em uma lista (candidates).
+      - No final, retorna o MENOR preço válido encontrado.
+      - Isso evita pegar preço antigo de 2k quando o atual é 158.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    candidates: list[float] = []
 
-/* Conteúdo principal deslocado */
-[data-testid="stAppViewContainer"] {
-    padding-left: 18rem !important;
-}
+    # 1) Blocos de preço principais (desktop / corePrice)
+    price_containers_selectors = [
+        "#corePriceDisplay_desktop_feature_div",
+        "#corePrice_feature_div",
+        "#price",
+        "div[data-feature-name='corePrice']",
+    ]
 
-[data-testid="stHeader"] {
-    margin-left: 18rem !important;
-}
+    for sel in price_containers_selectors:
+        block = soup.select_one(sel)
+        price = _parse_price_from_price_block(block)
+        if price is not None and price > 1:
+            candidates.append(price)
 
-/* Card */
-.detail-card {
-    padding: 1rem;
-    border-radius: 0.9rem;
-    background: #020617;
-    border: 1px solid rgba(148,163,184,0.5);
-    margin-bottom: 1.25rem;
-    box-shadow: 0 12px 30px rgba(15,23,42,0.7);
-}
+    # 2) Qualquer .a-price na página (todos os blocos)
+    for block in soup.select("span.a-price, div.a-price"):
+        price = _parse_price_from_price_block(block)
+        if price is not None and price > 1:
+            candidates.append(price)
 
-/* Badges */
-.metric-badge {
-    display:inline-block;
-    padding:0.2rem 0.6rem;
-    border-radius:999px;
-    background:#0f172a;
-    font-size:0.7rem;
-    margin-right:0.3rem;
-    color:#e5e7eb;
-    border:1px solid rgba(148,163,184,0.6);
-}
-.metric-badge.neutral  { border-color:#64748b; }
+    # 3) IDs clássicos da Amazon (fallback antigo)
+    for span_id in [
+        "priceblock_ourprice",
+        "priceblock_dealprice",
+        "priceblock_saleprice",
+        "corePrice_feature_div",
+    ]:
+        span = soup.find("span", id=span_id)
+        if span and span.get_text(strip=True):
+            price = extract_price(span.get_text())
+            if price is not None and price > 1:
+                candidates.append(price)
 
-.last-update-pill {
-    padding:0.35rem 0.9rem;
-    border-radius:999px;
-    border:1px solid rgba(148,163,184,0.6);
-    background:#020617;
-    font-size:0.75rem;
-    display:flex;
-    gap:0.35rem;
-    align-items:center;
-}
+    # 4) Estrutura nova: .a-price .a-offscreen
+    span = soup.select_one(".a-price .a-offscreen")
+    if span and span.get_text(strip=True):
+        price = extract_price(span.get_text())
+        if price is not None and price > 1:
+            candidates.append(price)
 
-/* Versão do dashboard */
-.version-chip {
-    font-size: 0.7rem;
-    padding: 0.15rem 0.45rem;
-    border-radius: 999px;
-    border: 1px solid #64748b;
-    margin-left: 0.5rem;
-    color: #cbd5e1;
-}
+    # 5) Qualquer span com a classe a-offscreen
+    span = soup.select_one("span.a-offscreen")
+    if span and span.get_text(strip=True):
+        price = extract_price(span.get_text())
+        if price is not None and price > 1:
+            candidates.append(price)
 
-</style>
-""",
-    unsafe_allow_html=True,
-)
+    # 6) Fallback extremo: usa todo o texto da página
+    text = soup.get_text(" ", strip=True)
+    price = extract_price(text)
+    if price is not None and price > 1:
+        candidates.append(price)
+
+    if not candidates:
+        return None
+
+    best_price = min(candidates)
+    return best_price
+
+
+def get_price_with_retries(url: str,
+                           attempts: int = 3,
+                           delay: int = 4) -> float | None:
+    """
+    Tenta extrair o preço de uma URL da Amazon com algumas tentativas.
+    Só retorna preço > 1. Se falhar, retorna None.
+    """
+    for i in range(1, attempts + 1):
+        print(f"  [INFO] Tentativa {i} para {url}")
+        html = fetch_html(url)
+        if not html:
+            time.sleep(delay)
+            continue
+
+        price = parse_price_from_html(html)
+        if price is not None and price > 1:
+            print(f"  [OK] Preço encontrado bruto (menor da página): R$ {price:.2f}")
+            return float(round(price, 2))
+
+        print("  [WARN] Preço não encontrado ou inválido, tentando de novo...")
+        time.sleep(delay)
+
+    print("  [ERRO] Não foi possível obter preço válido após várias tentativas.")
+    return None
 
 
 # =============================================================================
-# SIDEBAR
+# LÓGICA PRINCIPAL
 # =============================================================================
 
-with st.sidebar:
-    st.markdown("### 📦 Produtos monitorados")
-    st.markdown(
-        "Dados carregados de um **banco local** (`scraping.db`) "
-        "que está dentro do repositório."
+def run_scraper():
+    ensure_schema()
+
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # lê todos os produtos cadastrados
+    cur.execute("SELECT id, name, url FROM products")
+    products = cur.fetchall()
+
+    if not products:
+        print("[INFO] Nenhum produto cadastrado na tabela products.")
+        conn.close()
+        return
+
+    # timestamp único da rodada, em UTC
+    now_utc = datetime.now(timezone.utc).replace(microsecond=0)
+    now_str = now_utc.isoformat()
+    print(f"[INFO] Iniciando rodada de scraping em {now_str} (UTC)")
+    print(f"[INFO] Total de produtos: {len(products)}")
+
+    sucessos = 0
+    falhas = 0
+    outliers = 0
+
+    for pid, name, url in products:
+        print(f"\n[PRODUTO] ID {pid} - {name}")
+        price = get_price_with_retries(url)
+
+        if price is None:
+            falhas += 1
+            print(f"[WARN] Produto '{name}': preço não será registrado nesta rodada (None).")
+            continue
+
+        # filtro de outlier baseado no histórico
+        if USE_OUTLIER_FILTER:
+            stats = get_price_stats(conn, pid)
+            if is_price_outlier(price, stats):
+                outliers += 1
+                if stats:
+                    print(
+                        f"[OUTLIER] Preço {price:.2f} muito diferente da mediana "
+                        f"{stats['median']:.2f} (histórico {stats['count']} pontos). "
+                        "Valor IGNORADO, não será salvo no banco."
+                    )
+                else:
+                    print(
+                        "[OUTLIER] Preço marcado como outlier, mas sem estatísticas "
+                        "detalhadas disponíveis. Valor IGNORADO."
+                    )
+                continue
+
+        # insere registro na tabela prices
+        cur.execute(
+            "INSERT INTO prices (product_id, price, date) VALUES (?, ?, ?)",
+            (pid, price, now_str),
+        )
+        conn.commit()
+        sucessos += 1
+        print(f"[SAVE] Gravado no banco: product_id={pid}, price={price:.2f}, date={now_str}")
+
+    conn.close()
+    print(
+        f"\n[RESUMO] Rodada finalizada."
+        f" Sucessos: {sucessos}"
+        f" | Falhas (sem preço): {falhas}"
+        f" | Outliers ignorados: {outliers}"
+        f" | Timestamp: {now_str} (UTC)"
     )
-    st.markdown(
-        "Você roda o *scraper* na sua máquina, ele atualiza o `scraping.db`, "
-        "e depois você faz **commit/push** desse arquivo para o GitHub."
-    )
-    st.markdown(
-        "[🔗 Repositório no GitHub]"
-        "(https://github.com/guilhermepires06/amazon-price-monitor)"
-    )
-    st.markdown("---")
-    st.markdown("**Sistema desenvolvido por:**")
-    st.markdown("🧠 Eduardo Feres")
-    st.markdown("👨‍💻 Guilherme Pires")
-    st.markdown("---")
-    st.markdown("📌 *Dashboard somente leitura (não altera o banco).*")
-    st.markdown("© 2025 - Amazon Price Monitor")
 
 
-# =============================================================================
-# CONTEÚDO PRINCIPAL
-# =============================================================================
-
-title_col, ver_col, btn_col = st.columns([3, 1, 1])
-
-with title_col:
-    st.title("💹 Monitor de Preços Amazon")
-
-with ver_col:
-    st.markdown(
-        '<div class="version-chip">v2 • dashboard.py (DB local do repositório)</div>',
-        unsafe_allow_html=True,
-    )
-
-with btn_col:
-    if st.button("🔄 Atualizar cache", use_container_width=True):
-        get_data.clear()
-        st.rerun()
-
-df_products, df_prices = get_data()
-
-if df_products.empty or df_prices.empty:
-    st.warning(
-        "Não foi possível carregar dados do banco local neste momento.\n\n"
-        "Verifique se o `scraping.db` que está no repositório possui dados "
-        "nas tabelas `products` e `prices`."
-    )
-    st.stop()
-
-if df_prices["date_local"].notna().any():
-    global_last = df_prices["date_local"].max()
-    global_last_str = global_last.strftime("%d/%m %H:%M")
-else:
-    global_last_str = "--/-- --:--"
-
-st.markdown(
-    f"""<div class="last-update-pill">
-        🕒 Última data registrada no banco: <strong>{global_last_str}</strong>
-    </div>""",
-    unsafe_allow_html=True,
-)
-
-st.markdown("## Produtos monitorados")
-
-sns.set_style("whitegrid")
-
-# =============================================================================
-# LOOP DOS PRODUTOS
-# =============================================================================
-
-for _, product in df_products.iterrows():
-    df_prod = df_prices[df_prices["product_id"] == product["id"]].copy()
-
-    if not df_prod.empty and df_prod["date_local"].notna().any():
-        last_row = df_prod.sort_values("date_local").iloc[-1]
-        last_dt = last_row["date_local"]
-        last_price = last_row["price"]
-        last_dt_str = last_dt.strftime("%d/%m %H:%M")
-    else:
-        last_dt_str = "--/-- --:--"
-        last_price = None
-
-    st.markdown('<div class="detail-card">', unsafe_allow_html=True)
-    st.markdown(f"### {product['name']}")
-
-    col_img, col_graph = st.columns([1, 1.8])
-
-    # IMAGEM
-    with col_img:
-        img_url = product.get("image_url") or get_product_image(product["url"])
-        if img_url:
-            st.image(img_url, width=220)
-        st.markdown(f"[Ver na Amazon]({product['url']})")
-
-    # GRÁFICO + INFO
-    with col_graph:
-        if df_prod.empty:
-            st.info("Sem histórico deste produto.")
-        else:
-            fig, ax = plt.subplots(figsize=(6, 2.5))
-            sns.lineplot(df_prod, x="date_local", y="price", marker="o", ax=ax)
-            ax.set_xlabel("Data/Hora (BR)")
-            ax.set_ylabel("Preço (R$)")
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
-            plt.xticks(rotation=25)
-            st.pyplot(fig)
-
-            if last_price is not None and pd.notna(last_price):
-                last_price_str = f"R$ {last_price:.2f}"
-            else:
-                last_price_str = "sem valor (NULL / None)"
-
-            st.markdown(
-                f'<span class="metric-badge neutral">'
-                f'Últ. registro no banco: {last_dt_str} — {last_price_str}'
-                f'</span>',
-                unsafe_allow_html=True,
-            )
-
-            with st.expander("Ver últimos registros brutos desse produto"):
-                st.write(
-                    df_prod.sort_values("date_local", ascending=False)
-                    .head(10)[["date_local", "price"]]
-                )
-
-    st.markdown("</div>", unsafe_allow_html=True)
+if __name__ == "__main__":
+    run_scraper()
