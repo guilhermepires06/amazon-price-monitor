@@ -1,13 +1,12 @@
 name: Rodar scraper automaticamente
 
-# 🔑 Permite que o GitHub Actions faça commit no repositório
 permissions:
   contents: write
 
 on:
   schedule:
     - cron: "*/5 * * * *"   # roda a cada 5 minutos
-  workflow_dispatch:        # permite rodar manualmente pelo botão "Run workflow"
+  workflow_dispatch:
 
 jobs:
   rodar-scraper:
@@ -27,9 +26,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Rodar scraper
+      - name: Rodar scraper (com tentativas forçadas)
         run: |
-          python scraper.py
+          echo ">>> Tentando rodar scraper (forçando coleta)"
+          for i in {1..3}
+          do
+            echo ">>> Tentativa $i..."
+            python scraper.py && break
+            echo ">>> Falhou, tentando novamente..."
+            sleep 5
+          done
 
       - name: Commit e push das mudanças
         run: |
