@@ -584,7 +584,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ----------------------------------------------------------------------------- #
-# GRID DE CARDS
+# GRID DE CARDS — ALINHADO E FUNCIONAL
 # ----------------------------------------------------------------------------- #
 
 st.markdown("## Produtos monitorados")
@@ -593,72 +593,104 @@ cols = st.columns(3, gap="large")
 
 for idx, (_, product) in enumerate(df_products.iterrows()):
     col = cols[idx % 3]
+
     with col:
 
-        # ABRE O CARD
-        st.markdown('<div class="product-card">', unsafe_allow_html=True)
+        # ===============================
+        # CARD REAL (USANDO CONTAINER)
+        # ===============================
+        card = st.container()
 
-        # TÍTULO
-        st.markdown(
-            f'<div class="product-title">{product["name"]}</div>',
-            unsafe_allow_html=True
-        )
+        with card:
 
-        # IMAGEM DO PRODUTO
-        img_url = product.get("image_url")
-        if not img_url:
-            img_url = get_product_image(product["url"])
-
-        if img_url:
-            st.image(img_url, width=230)
-        else:
-            st.markdown(
-                """
-                <div style="
-                    width: 230px;
-                    height: 180px;
-                    background: #111827;
-                    border-radius: 8px;
-                    border: 1px solid #334155;
+            st.markdown("""
+                <style>
+                .card-box {
+                    background: #020617;
+                    border: 1px solid rgba(148,163,184,0.4);
+                    border-radius: 12px;
+                    padding: 14px;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: space-between;
+                    height: 420px;       /* FORÇA TODOS IGUAIS */
+                    box-shadow: 0 10px 25px rgba(0,0,0,0.35);
+                }
+                .card-title {
+                    font-size: 0.90rem;
+                    font-weight: 600;
+                    color: #e5e7eb;
+                    margin-bottom: 8px;
+                    min-height: 2.8em;     /* TRUNCA EM 2 LINHAS */
+                    display: -webkit-box;
+                    -webkit-line-clamp: 2;
+                    -webkit-box-orient: vertical;
+                    overflow: hidden;
+                }
+                .img-wrapper {
+                    height: 180px;         /* ÁREA FIXA DA IMAGEM */
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    font-size: 0.8rem;
-                    color: #64748b;
-                    margin: 0 auto 0.4rem auto;">
-                    Imagem indisponível
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+                    margin-bottom: 10px;
+                }
+                </style>
+            """, unsafe_allow_html=True)
 
-        # PREÇO
-        latest_price = get_latest_price(df_prices, product["id"])
-        if latest_price is not None:
+            st.markdown('<div class="card-box">', unsafe_allow_html=True)
+
+            # TÍTULO
             st.markdown(
-                f'<div class="product-price">R$ {latest_price:.2f}</div>',
-                unsafe_allow_html=True
-            )
-        else:
-            st.markdown(
-                '<div class="product-price">Sem preço ainda</div>',
+                f'<div class="card-title">{product["name"]}</div>',
                 unsafe_allow_html=True
             )
 
-        # BOTÕES
-        b1, b2 = st.columns(2)
+            # IMAGEM
+            img_url = product.get("image_url") or get_product_image(product["url"])
 
-        with b1:
-            if st.button("Ver detalhes", key=f"view_{product['id']}"):
-                st.session_state["selected_product_id"] = product["id"]
-                st.rerun()
+            st.markdown('<div class="img-wrapper">', unsafe_allow_html=True)
 
-        with b2:
-            if st.button("🗑 Excluir", key=f"del_{product['id']}"):
-                delete_product_from_db(product["id"])
-                if st.session_state.get("selected_product_id") == product["id"]:
-                    st.session_state["selected_product_id"] = None
-                st.rerun()
+            if img_url:
+                st.image(img_url, width=210)
+            else:
+                st.markdown("""
+                    <div style="
+                        width:210px;
+                        height:160px;
+                        background:#111827;
+                        border-radius:8px;
+                        border:1px solid #334155;
+                        display:flex;
+                        align-items:center;
+                        justify-content:center;
+                        font-size:0.8rem;
+                        color:#64748b;">
+                        Sem imagem
+                    </div>
+                """, unsafe_allow_html=True)
 
-        # FECHA O CARD
-        st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            # PREÇO
+            latest_price = get_latest_price(df_prices, product["id"])
+            if latest_price is not None:
+                st.markdown(f"**R$ {latest_price:.2f}**")
+            else:
+                st.markdown("**Sem preço ainda**")
+
+            # BOTÕES ALINHADOS NA BASE
+            b1, b2 = st.columns(2)
+
+            with b1:
+                if st.button("Ver detalhes", key=f"view_{product['id']}"):
+                    st.session_state["selected_product_id"] = product["id"]
+                    st.rerun()
+
+            with b2:
+                if st.button("🗑 Excluir", key=f"del_{product['id']}"):
+                    delete_product_from_db(product["id"])
+                    if st.session_state.get("selected_product_id") == product["id"]:
+                        st.session_state["selected_product_id"] = None
+                    st.rerun()
+
+            st.markdown('</div>', unsafe_allow_html=True)  # fecha card-box
