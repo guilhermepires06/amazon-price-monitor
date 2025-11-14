@@ -336,11 +336,16 @@ st.markdown(
     }
 
     /* CARD DOS PRODUTOS (quadrado azul) ------------------------------------ */
-    .product-card {
+    .product-card-flag {
+        display: none;
+    }
+
+    /* Aqui estilizamos o container inteiro que contém a flag (título, imagem, preço e botões) */
+    div[data-testid="stVerticalBlock"]:has(.product-card-flag) {
         position: relative;
         display: flex;
         flex-direction: column;
-        justify-content: space-between;
+        justify-content: flex-start;
         gap: 0.45rem;
         background: radial-gradient(circle at top left, #020617, #020617 40%, #020617 100%);
         border-radius: 1rem;
@@ -349,9 +354,10 @@ st.markdown(
         padding: 0.9rem 1rem 0.9rem 1rem;
         min-height: 320px;
         transition: all 0.18s ease-out;
+        margin-bottom: 1.7rem;
         overflow: hidden;
     }
-    .product-card::before {
+    div[data-testid="stVerticalBlock"]:has(.product-card-flag)::before {
         content: "";
         position: absolute;
         inset: 0;
@@ -359,17 +365,10 @@ st.markdown(
         opacity: 0.9;
         pointer-events: none;
     }
-    .product-card:hover {
+    div[data-testid="stVerticalBlock"]:has(.product-card-flag):hover {
         transform: translateY(-4px);
         box-shadow: 0 20px 50px rgba(15,23,42,0.95);
         border-color: rgba(129,140,248,0.8);
-    }
-    .product-card-inner {
-        position: relative;
-        z-index: 1;
-        display: flex;
-        flex-direction: column;
-        height: 100%;
     }
 
     .product-title {
@@ -382,12 +381,16 @@ st.markdown(
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
+        position: relative;
+        z-index: 1;
     }
 
     .product-image-wrapper {
         width: 100%;
         text-align: center;
         margin: 0.25rem 0 0.5rem 0;
+        position: relative;
+        z-index: 1;
     }
     .product-image-wrapper img {
         max-width: 230px;
@@ -396,6 +399,7 @@ st.markdown(
         object-fit: contain;
         border-radius: 0.75rem;
     }
+
     .product-image-placeholder {
         width: 100%;
         height: 170px;
@@ -410,6 +414,8 @@ st.markdown(
     }
 
     .product-card-footer {
+        position: relative;
+        z-index: 1;
         margin-top: auto;
         padding-top: 0.35rem;
         border-top: 1px dashed rgba(55,65,81,0.8);
@@ -425,6 +431,12 @@ st.markdown(
         background: rgba(15,23,42,0.9);
         border: 1px solid rgba(129,140,248,0.6);
         color: #ede9fe;
+    }
+
+    .product-actions-row {
+        position: relative;
+        z-index: 1;
+        margin-top: 0.45rem;
     }
 
     /* DETALHES DO PRODUTO --------------------------------------------------- */
@@ -737,48 +749,57 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
     col = cols[idx % 3]
 
     with col:
-        latest_price = get_latest_price(df_prices, product["id"])
-        img_url = product.get("image_url")
-        if not img_url:
-            img_url = get_product_image(product["url"])
+        with st.container():
+            # FLAG que marca este bloco como um card (CSS pega o container inteiro)
+            st.markdown('<div class="product-card-flag"></div>', unsafe_allow_html=True)
 
-        # Monta o card inteiro em HTML (título, imagem e preço) – tudo dentro do quadrado azul
-        if img_url:
-            img_block = f'<img src="{img_url}" alt="Imagem do produto" />'
-        else:
-            img_block = '<div class="product-image-placeholder">Imagem indisponível</div>'
+            # TÍTULO
+            st.markdown(
+                f'<div class="product-title">{product["name"]}</div>',
+                unsafe_allow_html=True,
+            )
 
-        price_text = (
-            f'<span class="product-price-badge">💰 R$ {latest_price:.2f}</span>'
-            if latest_price is not None
-            else '<span class="product-price-badge">Sem preço ainda</span>'
-        )
+            # IMAGEM
+            img_url = product.get("image_url")
+            if not img_url:
+                img_url = get_product_image(product["url"])
 
-        card_html = f"""
-        <div class="product-card">
-          <div class="product-card-inner">
-            <div class="product-title">{product["name"]}</div>
-            <div class="product-image-wrapper">
-              {img_block}
-            </div>
-            <div class="product-card-footer">
-              {price_text}
-            </div>
-          </div>
-        </div>
-        """
+            st.markdown('<div class="product-image-wrapper">', unsafe_allow_html=True)
+            if img_url:
+                st.image(img_url, use_column_width=False, width=230)
+            else:
+                st.markdown(
+                    '<div class="product-image-placeholder">Imagem indisponível</div>',
+                    unsafe_allow_html=True,
+                )
+            st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown(card_html, unsafe_allow_html=True)
+            # PREÇO
+            latest_price = get_latest_price(df_prices, product["id"])
+            st.markdown('<div class="product-card-footer">', unsafe_allow_html=True)
+            if latest_price is not None:
+                st.markdown(
+                    f'<span class="product-price-badge">💰 R$ {latest_price:.2f}</span>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    '<span class="product-price-badge">Sem preço ainda</span>',
+                    unsafe_allow_html=True,
+                )
+            st.markdown("</div>", unsafe_allow_html=True)
 
-        # Botões de ação (ficam logo abaixo do card)
-        b1, b2 = st.columns(2)
-        with b1:
-            if st.button("Ver detalhes", key=f"view_{product['id']}"):
-                st.session_state["selected_product_id"] = product["id"]
-                st.rerun()
-        with b2:
-            if st.button("🗑 Excluir", key=f"del_{product['id']}"):
-                delete_product_from_db(product["id"])
-                if st.session_state.get("selected_product_id") == product["id"]:
-                    st.session_state["selected_product_id"] = None
-                st.rerun()
+            # BOTÕES – agora DENTRO do card azul
+            st.markdown('<div class="product-actions-row">', unsafe_allow_html=True)
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("Ver detalhes", key=f"view_{product['id']}"):
+                    st.session_state["selected_product_id"] = product["id"]
+                    st.rerun()
+            with b2:
+                if st.button("🗑 Excluir", key=f"del_{product['id']}"):
+                    delete_product_from_db(product["id"])
+                    if st.session_state.get("selected_product_id") == product["id"]:
+                        st.session_state["selected_product_id"] = None
+                    st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
