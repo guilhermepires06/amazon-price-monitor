@@ -168,15 +168,93 @@ st.markdown(
 # =============================================================================
 
 with st.sidebar:
-    st.markdown("## Produtos monitorados")
-    st.markdown("Interface somente de leitura - Sistema Hospedado no GitHub")
-    st.markdown("https://github.com/guilhermepires06")
-    st.markdown(" ")
-    st.markdown("_____________________________________")
-    st.markdown(" ")
-    st.markdown("Sistema feito por:")
-    st.markdown("Guilherme Pires")
-    st.markdown("Eduardo Feres")
+    st.markdown(
+        """
+        <style>
+        .sidebar-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #e5e7eb;
+            margin-bottom: 0.4rem;
+        }
+
+        .sidebar-sub {
+            font-size: 0.85rem;
+            color: #94a3b8;
+            margin-bottom: 1.2rem;
+        }
+
+        .sidebar-box {
+            padding: 0.9rem 1rem;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(148,163,184,0.25);
+            border-radius: 10px;
+            margin-bottom: 1.2rem;
+        }
+
+        .sidebar-footer {
+            font-size: 0.8rem;
+            color: #cbd5e1;
+            margin-top: 1.4rem;
+            text-align: center;
+            opacity: 0.8;
+        }
+
+        .sidebar-link {
+            color: #38bdf8 !important;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .sidebar-dev {
+            font-size: 0.9rem;
+            line-height: 1.1rem;
+            color: #e2e8f0;
+        }
+
+        .dev-name {
+            font-weight: 600;
+            color: #a5b4fc;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown('<div class="sidebar-title">📦 Produtos Monitorados</div>', unsafe_allow_html=True)
+
+    st.markdown(
+        '<div class="sidebar-sub">Interface somente de leitura<br>Sistema hospedado no GitHub</div>',
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="sidebar-box">
+            <a class="sidebar-link" href="https://github.com/guilhermepires06" target="_blank">
+                🔗 Repositório no GitHub
+            </a>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="sidebar-box sidebar-dev">
+            <div>Sistema desenvolvido por:</div>
+            <div class="dev-name">Guilherme Pires</div>
+            <div class="dev-name">Eduardo Feres</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="sidebar-footer">© 2025 - Amazon Price Monitor</div>',
+        unsafe_allow_html=True,
+    )
+
 # =============================================================================
 # CONTEÚDO PRINCIPAL
 # =============================================================================
