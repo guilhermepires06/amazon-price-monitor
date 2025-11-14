@@ -19,6 +19,7 @@ from utils import extract_price
 # CONFIG BÁSICA
 # =============================================================================
 
+# 👉 ATENÇÃO: esse é o ÚNICO banco que o dashboard lê
 GITHUB_DB_URL = (
     "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"
 )
@@ -34,16 +35,16 @@ HEADERS = {
 
 
 # =============================================================================
-# BANCO – SEMPRE DO GITHUB
+# BANCO – SEMPRE DO GITHUB (COM CACHE LIMPO PELO BOTÃO)
 # =============================================================================
 
 @st.cache_data(show_spinner=False, ttl=300)
 def get_data():
     """
     Baixa o scraping.db diretamente do GitHub (RAW),
-    grava temporariamente e lê com sqlite.
+    grava em arquivo temporário e lê com sqlite.
     Interpreta o campo `date` como UTC e converte para horário de Brasília.
-    NÃO mexe nos valores de preço (nem 0, nem outlier).
+    NÃO altera os valores de price (mostra o que está no banco).
     """
     resp = requests.get(GITHUB_DB_URL, headers=HEADERS, timeout=30)
     resp.raise_for_status()
@@ -57,7 +58,7 @@ def get_data():
     df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
     conn.close()
 
-    # remove o arquivo temporário
+    # limpa o arquivo temporário
     try:
         os.remove(tmp_path)
     except OSError:
@@ -82,15 +83,15 @@ def get_data():
     else:
         df_prices["date_local"] = pd.NaT
 
-    # NÃO mexe em df_prices["price"]: mostra o valor cru do banco
+    # aqui NÃO mexemos em price: é o valor cru que o scraper salvou
     return df_products, df_prices
 
 
 # =============================================================================
-# SCRAPING IMAGEM
+# SCRAPING IMAGEM (SOMENTE PARA O THUMB DA PÁGINA)
 # =============================================================================
 
-@st.cache_data(show_spinner=False, ttl=600)
+@st.cache_data(show_spinner=False, ttl=60 * 60)
 def get_product_image(url: str):
     try:
         html = requests.get(url, headers=HEADERS, timeout=20).text
@@ -127,12 +128,13 @@ def get_product_image(url: str):
 # =============================================================================
 
 st.set_page_config(
-    page_title="Monitor de Preços Amazon",
+    page_title="Monitor de Preços Amazon (v2)",
     layout="wide",
     page_icon="💹",
 )
 
-st.markdown("""
+st.markdown(
+    """
 <style>
 
 /* SIDEBAR FIXA */
@@ -175,8 +177,6 @@ st.markdown("""
     color:#e5e7eb;
     border:1px solid rgba(148,163,184,0.6);
 }
-.metric-badge.positive { border-color:#22c55e; }
-.metric-badge.negative { border-color:#ef4444; }
 .metric-badge.neutral  { border-color:#64748b; }
 
 .last-update-pill {
@@ -190,8 +190,20 @@ st.markdown("""
     align-items:center;
 }
 
+/* Versão do dashboard */
+.version-chip {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid #64748b;
+    margin-left: 0.5rem;
+    color: #cbd5e1;
+}
+
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 # =============================================================================
@@ -200,15 +212,15 @@ st.markdown("""
 
 with st.sidebar:
     st.markdown("### 📦 Produtos monitorados")
-    st.markdown("Dados carregados 100% do GitHub (banco remoto).")
-    st.markdown("Robô atualiza o banco a cada 5 minutos.")
-    st.markdown("Você pode forçar a leitura clicando em **Atualizar agora** no topo.")
+    st.markdown("Dados carregados **100%** do GitHub (`scraping.db`).")
+    st.markdown("Robô atualiza o banco a cada 5 minutos via GitHub Actions.")
+    st.markdown("Use o botão **🔄 Atualizar agora** para forçar leitura nova.")
     st.markdown("[🔗 Repositório no GitHub](https://github.com/guilhermepires06/amazon-price-monitor)")
     st.markdown("---")
     st.markdown("**Sistema desenvolvido por:**")
-    st.markdown("🧠 Eduardo Feres\n 👨‍💻 Guilherme Pires")
+    st.markdown("🧠 Eduardo Feres\n👨‍💻 Guilherme Pires")
     st.markdown("---")
-    st.markdown("📌 *Dashboard em modo somente leitura.*")
+    st.markdown("📌 *Dashboard somente leitura (não altera o banco).*")
     st.markdown("© 2025 - Amazon Price Monitor")
 
 
@@ -216,15 +228,22 @@ with st.sidebar:
 # CONTEÚDO PRINCIPAL
 # =============================================================================
 
-st.title("💹 Monitor de Preços")
+# título com chip de versão pra você ver que trocou de fato
+title_col, ver_col, btn_col = st.columns([3, 1, 1])
 
-# Botão para forçar atualização (limpa cache e recarrega)
-col_top1, col_top2 = st.columns([4, 1])
-with col_top2:
+with title_col:
+    st.title("💹 Monitor de Preços Amazon")
+
+with ver_col:
+    st.markdown('<div class="version-chip">v2 • dashboard.py</div>', unsafe_allow_html=True)
+
+with btn_col:
     if st.button("🔄 Atualizar agora", use_container_width=True):
+        # Zera cache do get_data() e recarrega tudo
         get_data.clear()
         st.rerun()
 
+# Carrega dados (do cache ou frescos, se acabou de clicar no botão)
 df_products, df_prices = get_data()
 
 if not df_prices.empty and df_prices["date_local"].notna().any():
@@ -234,7 +253,9 @@ else:
     global_last_str = "--/-- --:--"
 
 st.markdown(
-    f"""<div class="last-update-pill">🕒 Última atualização no banco: <strong>{global_last_str}</strong></div>""",
+    f"""<div class="last-update-pill">
+        🕒 Última data registrada no banco: <strong>{global_last_str}</strong>
+    </div>""",
     unsafe_allow_html=True,
 )
 
@@ -249,14 +270,14 @@ sns.set_style("whitegrid")
 for _, product in df_products.iterrows():
     df_prod = df_prices[df_prices["product_id"] == product["id"]].copy()
 
-    # Último registro bruto (mesmo que preço seja 0 ou NaN)
-    if not df_prod.empty:
+    # Info de último registro desse produto
+    if not df_prod.empty and df_prod["date_local"].notna().any():
         last_row = df_prod.sort_values("date_local").iloc[-1]
         last_dt = last_row["date_local"]
         last_price = last_row["price"]
-        last_dt_str = last_dt.strftime("%d/%m %H:%M") if pd.notna(last_dt) else "--:--"
+        last_dt_str = last_dt.strftime("%d/%m %H:%M")
     else:
-        last_dt_str = "--:--"
+        last_dt_str = "--/-- --:--"
         last_price = None
 
     st.markdown('<div class="detail-card">', unsafe_allow_html=True)
@@ -271,12 +292,12 @@ for _, product in df_products.iterrows():
             st.image(img_url, width=220)
         st.markdown(f"[Ver na Amazon]({product['url']})")
 
-    # GRÁFICO + INSIGHTS
+    # GRÁFICO + INFO
     with col_graph:
         if df_prod.empty:
             st.info("Sem histórico deste produto.")
         else:
-            # ---------- GRÁFICO COM TODOS OS VALORES ----------
+            # gráfico cru: exatamente como está no banco
             fig, ax = plt.subplots(figsize=(6, 2.5))
             sns.lineplot(df_prod, x="date_local", y="price", marker="o", ax=ax)
             ax.set_xlabel("Data/Hora (BR)")
@@ -285,36 +306,24 @@ for _, product in df_products.iterrows():
             plt.xticks(rotation=25)
             st.pyplot(fig)
 
-            # Badge do último valor exatamente como está no banco
+            # Badge com última linha da tabela
             if last_price is not None and pd.notna(last_price):
                 last_price_str = f"R$ {last_price:.2f}"
             else:
-                last_price_str = "sem valor"
+                last_price_str = "sem valor (NULL / None)"
 
             st.markdown(
-                f'<span class="metric-badge neutral">Últ. coleta: {last_dt_str} — {last_price_str}</span>',
+                f'<span class="metric-badge neutral">'
+                f'Últ. registro no banco: {last_dt_str} — {last_price_str}'
+                f'</span>',
                 unsafe_allow_html=True,
             )
 
-            # ---------- INSIGHTS SIMPLES (SEM FILTRO) ----------
-            df_valid = df_prod.dropna(subset=["price"])
-            if len(df_valid) >= 2:
-                df_valid = df_valid.sort_values("date_local")
-                first = df_valid["price"].iloc[0]
-                last = df_valid["price"].iloc[-1]
-                diff = last - first
-                pct = diff / first * 100 if first != 0 else 0
-
-                max_p = df_valid["price"].max()
-                min_p = df_valid["price"].min()
-                mean_p = df_valid["price"].mean()
-
-                st.write(f"**Tendência:** {diff:+.2f} ({pct:+.1f}%)")
+            # Pequeno debug pra você ver o que o banco tem pra esse produto
+            with st.expander("Ver últimos registros brutos desse produto"):
                 st.write(
-                    f"**Faixa:** min R$ {min_p:.2f}, máx R$ {max_p:.2f}, "
-                    f"média R$ {mean_p:.2f}"
+                    df_prod.sort_values("date_local", ascending=False)
+                    .head(10)[["date_local", "price"]]
                 )
-            else:
-                st.write("Dados insuficientes para análises.")
 
     st.markdown("</div>", unsafe_allow_html=True)
