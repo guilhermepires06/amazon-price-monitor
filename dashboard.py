@@ -16,8 +16,8 @@ from utils import extract_price
 # CONFIG BÁSICA
 # =============================================================================
 
-#DB_NAME = "scraping.db"  # arquivo local que vem do GitHub no deploy
-GITHUB_DB_URL = "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"
+DB_NAME = "scraping.db"  # arquivo local que vem do GitHub no deploy
+
 
 HEADERS = {
     "User-Agent": (
