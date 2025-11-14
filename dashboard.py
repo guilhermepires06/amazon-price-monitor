@@ -256,41 +256,143 @@ st.markdown(
         background: radial-gradient(circle at top left, #111827, #020617);
         color: #e5e7eb;
     }
+
+    /* SIDEBAR --------------------------------------------------------------- */
     [data-testid="stSidebar"] {
-        background-color: #020617;
+        background: linear-gradient(180deg, #020617 0%, #020617 40%, #020617 100%);
         color: #e5e7eb;
-        border-right: 1px solid #1f2933;
+        border-right: 1px solid #1f2937;
     }
+    [data-testid="stSidebar"] h2, 
+    [data-testid="stSidebar"] h3 {
+        color: #f9fafb !important;
+    }
+    .sidebar-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        margin-bottom: 0.15rem;
+    }
+    .sidebar-sub {
+        font-size: 0.80rem;
+        color: #9ca3af;
+        margin-bottom: 0.8rem;
+    }
+    .sidebar-box {
+        padding: 0.9rem 1rem;
+        background: rgba(15,23,42,0.85);
+        border-radius: 0.75rem;
+        border: 1px solid rgba(148,163,184,0.35);
+        box-shadow: 0 10px 30px rgba(15,23,42,0.75);
+    }
+
+    /* TÍTULOS --------------------------------------------------------------- */
     h1, h2, h3, h4, h5, h6 {
         color: #e5e7eb !important;
     }
 
-    /* FLAG usada para identificar o container do card */
+    .main-title {
+        font-size: 1.9rem;
+        font-weight: 800;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.2rem;
+    }
+    .main-title span.icon {
+        font-size: 1.6rem;
+    }
+    .section-title {
+        font-size: 1.2rem;
+        font-weight: 700;
+        margin-top: 1.5rem;
+        margin-bottom: 0.8rem;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+    .section-title::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: linear-gradient(90deg, rgba(148,163,184,0.7), transparent);
+        opacity: 0.7;
+    }
+
+    /* PILL DE ÚLTIMA ATUALIZAÇÃO ------------------------------------------- */
+    .last-update-pill {
+        padding: 0.35rem 0.9rem;
+        border-radius: 999px;
+        border: 1px solid rgba(148,163,184,0.5);
+        background: rgba(15,23,42,0.9);
+        font-size: 0.78rem;
+        display: inline-flex;
+        gap: 0.35rem;
+        align-items: center;
+        justify-content: flex-end;
+        white-space: nowrap;
+    }
+    .last-update-pill strong {
+        color: #e5e7eb;
+    }
+
+    /* CARD DOS PRODUTOS ----------------------------------------------------- */
     .product-card-flag {
         display: none;
     }
 
-    /* O PAI que contém a flag vira o CARD */
+    /* O container do card */
     div:has(> .product-card-flag) {
-        background: #020617;
-        border-radius: 0.8rem;
-        border: 1px solid rgba(148,163,184,0.4);
-        box-shadow: 0 10px 25px rgba(15,23,42,0.75);
-        padding: 0.9rem 0.9rem 0.8rem 0.9rem;
-        margin-bottom: 1.5rem;
-        min-height: 360px; /* força altura parecida entre todos */
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        gap: 0.55rem;
+        background: radial-gradient(circle at top left, #020617, #020617 40%, #020617 100%);
+        border-radius: 1rem;
+        border: 1px solid rgba(148,163,184,0.45);
+        box-shadow: 0 12px 35px rgba(15,23,42,0.9);
+        padding: 0.9rem 1rem 0.9rem 1rem;
+        margin-bottom: 1.7rem;
+        min-height: 360px;
+        transition: all 0.18s ease-out;
+        overflow: hidden;
+    }
+    div:has(> .product-card-flag)::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at top right, rgba(56,189,248,0.08), transparent 55%);
+        opacity: 0.9;
+        pointer-events: none;
+    }
+    div:has(> .product-card-flag):hover {
+        transform: translateY(-4px);
+        box-shadow: 0 20px 50px rgba(15,23,42,0.95);
+        border-color: rgba(129,140,248,0.8);
     }
 
     .product-title {
         font-size: 0.90rem;
         font-weight: 600;
         color: #e5e7eb;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.35rem;
         min-height: 2.6em;
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
+        position: relative;
+        z-index: 1;
+    }
+
+    .product-image-wrapper {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: 0.25rem 0 0.4rem 0;
     }
 
     .product-price {
@@ -298,43 +400,80 @@ st.markdown(
         font-weight: 700;
         margin-top: 0.2rem;
         color: #a5b4fc;
-        margin-bottom: 0.4rem;
+        margin-bottom: 0.3rem;
     }
 
+    .product-price-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        font-size: 0.76rem;
+        background: rgba(15,23,42,0.9);
+        border: 1px solid rgba(129,140,248,0.6);
+        color: #ede9fe;
+    }
+
+    .product-card-footer {
+        position: relative;
+        z-index: 1;
+        margin-top: auto;
+        padding-top: 0.35rem;
+        border-top: 1px dashed rgba(55,65,81,0.8);
+    }
+
+    /* DETALHES DO PRODUTO --------------------------------------------------- */
     .detail-card {
-        padding: 1.25rem;
-        border-radius: 1rem;
-        background: #020617;
-        border: 1px solid rgba(148,163,184,0.5);
-        margin-top: 0.5rem;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 18px 45px rgba(15,23,42,0.9);
+        padding: 1.25rem 1.4rem;
+        border-radius: 1.1rem;
+        background: radial-gradient(circle at top left, #020617, #020617 45%, #020617 100%);
+        border: 1px solid rgba(148,163,184,0.6);
+        margin-top: 0.7rem;
+        margin-bottom: 1.6rem;
+        box-shadow: 0 18px 50px rgba(15,23,42,0.95);
+        position: relative;
+        overflow: hidden;
+    }
+    .detail-card::before {
+        content: "";
+        position: absolute;
+        inset: -40%;
+        background: radial-gradient(circle at top right, rgba(56,189,248,0.12), transparent 65%);
+        opacity: 0.9;
+        pointer-events: none;
+    }
+    .detail-card h3, .detail-card h4 {
+        position: relative;
+        z-index: 1;
     }
 
     .metric-badge {
         display: inline-block;
         padding: 0.25rem 0.7rem;
         border-radius: 999px;
-        background: #0f172a;
+        background: #020617;
         font-size: 0.75rem;
         margin-right: 0.3rem;
         color: #e5e7eb;
+        border: 1px solid #64748b;
     }
-    .metric-badge.positive { border: 1px solid #22c55e; }
-    .metric-badge.negative { border: 1px solid #ef4444; }
-    .metric-badge.neutral  { border: 1px solid #64748b; }
+    .metric-badge.positive { border-color: #22c55e; }
+    .metric-badge.negative { border-color: #ef4444; }
+    .metric-badge.neutral  { border-color: #64748b; }
 
     a { color: #38bdf8 !important; }
 
-    .last-update-pill {
-        padding: 0.35rem 0.9rem;
-        border-radius: 999px;
-        border: 1px solid rgba(148,163,184,0.6);
-        background: #020617;
-        font-size: 0.75rem;
-        display: inline-flex;
-        gap: 0.35rem;
-        align-items: center;
+    .stButton>button {
+        border-radius: 999px !important;
+        font-size: 0.78rem !important;
+        padding: 0.35rem 0.85rem !important;
+        border: 1px solid rgba(148,163,184,0.4);
+        background: rgba(15,23,42,0.85);
+    }
+    .stButton>button:hover {
+        border-color: rgba(129,140,248,0.9);
+        background: rgba(30,64,175,0.95);
     }
     </style>
     """,
@@ -346,10 +485,14 @@ st.markdown(
 # =============================================================================
 
 with st.sidebar:
-    st.markdown("## ➕ Adicionar produto da Amazon")
-    st.write(
+    st.markdown('<div class="sidebar-box">', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-title">➕ Adicionar produto da Amazon</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sidebar-sub">'
         "Cole a URL de um produto da Amazon e, se quiser, personalize o nome. "
         "O sistema tentará buscar automaticamente o título e a imagem."
+        "</div>",
+        unsafe_allow_html=True,
     )
 
     new_url = st.text_input("URL do produto na Amazon")
@@ -389,14 +532,13 @@ with st.sidebar:
         "Este painel lê o banco **`scraping.db`**, "
         "atualizado automaticamente pelo GitHub Actions."
     )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # =============================================================================
 # CONTEÚDO PRINCIPAL
 # =============================================================================
 
 df_products, df_prices = get_data()
-
-st.title("💹 Monitor de Preços")
 
 # Última atualização
 if not df_prices.empty and "date_local" in df_prices.columns:
@@ -405,13 +547,26 @@ if not df_prices.empty and "date_local" in df_prices.columns:
 else:
     last_str = "--/-- --:--"
 
-col_title, col_last = st.columns([4, 1])
-with col_last:
+header_col1, header_col2 = st.columns([3, 1])
+with header_col1:
+    st.markdown(
+        """
+        <div class="main-title">
+            <span class="icon">💹</span>
+            <span>Monitor de Preços</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with header_col2:
     st.markdown(
         f"""
-        <div class="last-update-pill">
-            <span>🕒 Última atualização:</span>
-            <strong>{last_str}</strong>
+        <div style="display:flex; justify-content:flex-end; margin-top:0.3rem;">
+            <div class="last-update-pill">
+                <span>🕒 Última atualização:</span>
+                <strong>{last_str}</strong>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -433,7 +588,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
     product = df_products[df_products["id"] == selected_id].iloc[0]
     df_prod = df_prices[df_prices["product_id"] == selected_id].copy()
 
-    st.markdown("## Detalhes do produto selecionado")
+    st.markdown('<h2 class="section-title">Detalhes do produto selecionado</h2>', unsafe_allow_html=True)
     with st.container():
         st.markdown('<div class="detail-card">', unsafe_allow_html=True)
 
@@ -570,7 +725,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
 # GRID DE CARDS – PRODUTOS MONITORADOS
 # ----------------------------------------------------------------------------- #
 
-st.markdown("## Produtos monitorados")
+st.markdown('<h2 class="section-title">Produtos monitorados</h2>', unsafe_allow_html=True)
 
 cols = st.columns(3, gap="large")
 
@@ -578,7 +733,6 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
     col = cols[idx % 3]
 
     with col:
-        # Container lógico do Streamlit
         with st.container():
             # FLAG para o CSS identificar este bloco como card
             st.markdown('<div class="product-card-flag"></div>', unsafe_allow_html=True)
@@ -594,6 +748,7 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
             if not img_url:
                 img_url = get_product_image(product["url"])
 
+            st.markdown('<div class="product-image-wrapper">', unsafe_allow_html=True)
             if img_url:
                 st.image(img_url, width=230)
             else:
@@ -603,34 +758,44 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                         width: 230px;
                         height: 180px;
                         background: #111827;
-                        border-radius: 8px;
+                        border-radius: 0.75rem;
                         border: 1px solid #334155;
                         display: flex;
                         align-items: center;
                         justify-content: center;
                         font-size: 0.8rem;
                         color: #64748b;
-                        margin: 0 auto 0.4rem auto;">
+                        margin: 0 auto 0.2rem auto;">
                         Imagem indisponível
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
+            st.markdown("</div>", unsafe_allow_html=True)
 
-            # PREÇO
+            # FOOTER DO CARD (preço + botões sempre alinhados na parte de baixo)
+            st.markdown('<div class="product-card-footer">', unsafe_allow_html=True)
+
             latest_price = get_latest_price(df_prices, product["id"])
             if latest_price is not None:
                 st.markdown(
-                    f'<div class="product-price">R$ {latest_price:.2f}</div>',
+                    f"""
+                    <div class="product-price">
+                        <span class="product-price-badge">💰 R$ {latest_price:.2f}</span>
+                    </div>
+                    """,
                     unsafe_allow_html=True,
                 )
             else:
                 st.markdown(
-                    '<div class="product-price">Sem preço ainda</div>',
+                    """
+                    <div class="product-price">
+                        <span class="product-price-badge">Sem preço ainda</span>
+                    </div>
+                    """,
                     unsafe_allow_html=True,
                 )
 
-            # BOTÕES
             b1, b2 = st.columns(2)
             with b1:
                 if st.button("Ver detalhes", key=f"view_{product['id']}"):
@@ -642,3 +807,5 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                     if st.session_state.get("selected_product_id") == product["id"]:
                         st.session_state["selected_product_id"] = None
                     st.rerun()
+
+            st.markdown("</div>", unsafe_allow_html=True)
