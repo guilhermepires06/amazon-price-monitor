@@ -192,6 +192,9 @@ with st.sidebar:
     st.markdown("🧠 Eduardo Feres")
     st.markdown("👨‍💻 Guilherme Pires")
     st.markdown("---")
+    st.markdown("Banco de dados atualzia de 5 em 5 minutos, 
+                graficos de 2 em 2 horas")
+    st.markdown("---")
     st.markdown("© 2025 - Amazon Price Monitor")
 
 # =============================================================================
