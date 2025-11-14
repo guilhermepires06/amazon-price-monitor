@@ -1,7 +1,6 @@
 import sqlite3
 import json
-import os
-import tempfile
+from datetime import datetime, timedelta
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -17,14 +16,7 @@ from utils import extract_price
 # CONFIG BÁSICA
 # =============================================================================
 
-# banco local dentro do repo (mesmo que o GitHub Actions atualiza)
-DB_NAME = "scraping.db"
-
-# Tenta usar esse banco REMOTO (se repo for público)
-GITHUB_DB_URL = (
-    "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"
-)
-
+DB_NAME = "scraping.db"  # arquivo local que vem do GitHub no deploy
 
 HEADERS = {
     "User-Agent": (
@@ -36,84 +28,60 @@ HEADERS = {
 }
 
 # =============================================================================
-# FUNÇÃO PARA CARREGAR DADOS (REMOTE + FALLBACK LOCAL)
+# BANCO – LENDO scraping.db LOCAL
 # =============================================================================
 
-
-@st.cache_data(show_spinner=False, ttl=300)
+@st.cache_data(show_spinner=False, ttl=60)
 def get_data():
     """
-    1) Tenta baixar scraping.db do GitHub (se repo for público).
-    2) Se falhar (404 / timeout / repo privado), cai pro scraping.db LOCAL.
-    3) Sempre retorna (df_products, df_prices, fonte), sem derrubar o app.
+    Lê o scraping.db local (o mesmo que está no repositório).
+
+    • Se der erro para abrir/ler, mostra st.error e retorna DataFrames vazios.
+    • Converte o campo `date` (UTC) para `date_local` (horário de Brasília).
     """
-    fonte = "desconhecida"
-
-    # 1) TENTAR REMOTO
     try:
-        resp = requests.get(GITHUB_DB_URL, headers=HEADERS, timeout=10)
-        if resp.status_code == 200:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp:
-                tmp.write(resp.content)
-                tmp_path = tmp.name
+        conn = sqlite3.connect(DB_NAME)
+    except Exception as e:
+        st.error(f"❌ Erro ao abrir o banco local '{DB_NAME}': {e}")
+        return pd.DataFrame(), pd.DataFrame()
 
-            try:
-                conn = sqlite3.connect(tmp_path)
-                df_products = pd.read_sql_query("SELECT * FROM products", conn)
-                df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
-                conn.close()
-                fonte = "github"
-
-            finally:
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
-
-        else:
-            st.warning(
-                f"⚠️ Falha ao baixar scraping.db do GitHub (HTTP {resp.status_code}). "
-                f"Usando cópia local `{DB_NAME}`."
-            )
-            raise RuntimeError("Erro HTTP remoto")
-
-    except Exception:
-        # 2) FALLBACK LOCAL
-        try:
-            conn = sqlite3.connect(DB_NAME)
-            df_products = pd.read_sql_query("SELECT * FROM products", conn)
-            df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
-            conn.close()
-            fonte = "local"
-        except Exception as e:
-            st.error(
-                f"❌ Não foi possível carregar dados nem do GitHub nem do banco local. Erro: {e}"
-            )
-            # DataFrames vazios pra não quebrar o app
-            return pd.DataFrame(), pd.DataFrame(), fonte
+    try:
+        df_products = pd.read_sql_query("SELECT * FROM products", conn)
+        df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
+    except Exception as e:
+        st.error(f"❌ Erro ao ler tabelas do banco '{DB_NAME}': {e}")
+        conn.close()
+        return pd.DataFrame(), pd.DataFrame()
+    finally:
+        conn.close()
 
     # Ajuste de datas
     if "date" in df_prices.columns:
-        df_prices["date"] = pd.to_datetime(df_prices["date"], errors="coerce")
+        df_prices["date"] = pd.to_datetime(
+            df_prices["date"], utc=True, errors="coerce"
+        )
         df_prices = df_prices.dropna(subset=["date"])
         df_prices = df_prices.sort_values("date")
-        # assume UTC-3 (Brasília) se não tiver timezone
-        if df_prices["date"].dt.tz is None:
-            df_prices["date_local"] = df_prices["date"] - pd.Timedelta(hours=3)
-        else:
+
+        try:
             df_prices["date_local"] = (
-                df_prices["date"].dt.tz_convert("America/Sao_Paulo").dt.tz_localize(None)
+                df_prices["date"]
+                .dt.tz_convert("America/Sao_Paulo")
+                .dt.tz_localize(None)
+            )
+        except Exception:
+            df_prices["date_local"] = (
+                df_prices["date"].dt.tz_localize(None) - pd.Timedelta(hours=3)
             )
     else:
         df_prices["date_local"] = pd.NaT
 
-    return df_products, df_prices, fonte
+    return df_products, df_prices
 
 
 # =============================================================================
-# SCRAPING IMAGEM (THUMB)
+# SCRAPING IMAGEM (SOMENTE PARA O THUMB DA PÁGINA)
 # =============================================================================
-
 
 @st.cache_data(show_spinner=False, ttl=60 * 60)
 def get_product_image(url: str):
@@ -229,23 +197,26 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
 # =============================================================================
 # SIDEBAR
 # =============================================================================
 
 with st.sidebar:
     st.markdown("### 📦 Produtos monitorados")
+    st.markdown("Dados carregados do banco local `scraping.db` (versão do repositório).")
+    st.markdown("GitHub Actions atualiza esse arquivo e faz commit periodicamente.")
     st.markdown(
-        "Dados carregados do banco `scraping.db` "
-        "(remoto GitHub quando disponível, senão cópia local do repositório)."
+        "[🔗 Repositório no GitHub]"
+        "(https://github.com/guilhermepires06/amazon-price-monitor)"
     )
-    st.markdown("[🔗 Repositório no GitHub](https://github.com/guilhermepires06/amazon-price-monitor)")
     st.markdown("---")
     st.markdown("**Sistema desenvolvido por:**")
     st.markdown("🧠 Eduardo Feres\n👨‍💻 Guilherme Pires")
     st.markdown("---")
     st.markdown("📌 *Dashboard somente leitura (não altera o banco).*")
     st.markdown("© 2025 - Amazon Price Monitor")
+
 
 # =============================================================================
 # CONTEÚDO PRINCIPAL
@@ -257,26 +228,25 @@ with title_col:
     st.title("💹 Monitor de Preços Amazon")
 
 with ver_col:
-    st.markdown('<div class="version-chip">v2 • dashboard.py</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="version-chip">v2 • dashboard.py (DB local)</div>',
+        unsafe_allow_html=True,
+    )
 
 with btn_col:
-    if st.button("🔄 Atualizar agora", use_container_width=True):
+    if st.button("🔄 Atualizar cache", use_container_width=True):
         get_data.clear()
         st.rerun()
 
-df_products, df_prices, fonte = get_data()
+df_products, df_prices = get_data()
 
 if df_products.empty or df_prices.empty:
-    st.warning("Não foi possível carregar dados do banco (tente novamente em alguns minutos).")
+    st.warning(
+        "Não foi possível carregar dados do banco local neste momento "
+        "(verifique se o scraping.db do repositório tem dados em "
+        "`products` e `prices`)."
+    )
     st.stop()
-
-# Info da fonte
-st.markdown(
-    f"""<div class="last-update-pill">
-        📂 Fonte dos dados: <strong>{'GitHub remoto' if fonte=='github' else 'Banco local (snapshot do repo)'}</strong>
-    </div>""",
-    unsafe_allow_html=True,
-)
 
 if df_prices["date_local"].notna().any():
     global_last = df_prices["date_local"].max()
