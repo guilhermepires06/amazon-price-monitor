@@ -1,6 +1,5 @@
 import sqlite3
 import json
-import tempfile
 from datetime import datetime, timedelta
 
 import matplotlib.pyplot as plt
@@ -17,11 +16,8 @@ from utils import extract_price
 # CONFIG BÁSICA
 # =============================================================================
 
-# URL do banco REMOTO (RAW no GitHub)
-GITHUB_DB_URL = (
-    "https://raw.githubusercontent.com/"
-    "guilhermepires06/amazon-price-monitor/main/scraping.db"
-)
+# Banco LOCAL que vem dentro do repositório (atualizado pelo scraper rodando no seu PC)
+DB_NAME = "scraping.db"
 
 HEADERS = {
     "User-Agent": (
@@ -33,44 +29,38 @@ HEADERS = {
 }
 
 # =============================================================================
-# BANCO – LENDO scraping.db REMOTO (GITHUB RAW)
+# BANCO – LENDO scraping.db LOCAL
 # =============================================================================
 
 @st.cache_data(show_spinner=False, ttl=60)
 def get_data():
     """
-    Lê o scraping.db remoto (RAW no GitHub).
+    Lê o scraping.db local (o mesmo que está no repositório).
 
-    • Faz download do arquivo .db remoto (read-only) e lê as tabelas.
-    • Se der erro para baixar/abrir/ler, mostra st.error e retorna DataFrames vazios.
+    • O arquivo scraping.db é gerado/atualizado pelo scraper rodando na sua máquina.
+    • Você faz commit/push desse arquivo para o GitHub.
+    • O Streamlit carrega exatamente esse arquivo que está no repositório.
+
+    • Se der erro para abrir/ler, mostra st.error e retorna DataFrames vazios.
     • Converte o campo `date` (UTC) para `date_local` (horário de Brasília).
     """
-    # 1) Baixar o .db remoto
     try:
-        resp = requests.get(GITHUB_DB_URL, headers=HEADERS, timeout=30)
-        resp.raise_for_status()
-        db_bytes = resp.content
+        conn = sqlite3.connect(DB_NAME)
     except Exception as e:
-        st.error(f"❌ Erro ao baixar o banco remoto em '{GITHUB_DB_URL}': {e}")
+        st.error(f"❌ Erro ao abrir o banco local '{DB_NAME}': {e}")
         return pd.DataFrame(), pd.DataFrame()
 
-    # 2) Abrir o .db em um arquivo temporário
     try:
-        with tempfile.NamedTemporaryFile(suffix=".db") as tmp:
-            tmp.write(db_bytes)
-            tmp.flush()
-
-            conn = sqlite3.connect(tmp.name)
-            try:
-                df_products = pd.read_sql_query("SELECT * FROM products", conn)
-                df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
-            finally:
-                conn.close()
+        df_products = pd.read_sql_query("SELECT * FROM products", conn)
+        df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
     except Exception as e:
-        st.error(f"❌ Erro ao ler tabelas do banco remoto: {e}")
+        st.error(f"❌ Erro ao ler tabelas do banco '{DB_NAME}': {e}")
+        conn.close()
         return pd.DataFrame(), pd.DataFrame()
+    finally:
+        conn.close()
 
-    # 3) Ajuste de datas
+    # Ajuste de datas
     if "date" in df_prices.columns:
         df_prices["date"] = pd.to_datetime(
             df_prices["date"], utc=True, errors="coerce"
@@ -85,7 +75,6 @@ def get_data():
                 .dt.tz_localize(None)
             )
         except Exception:
-            # fallback burro (UTC-3 fixo)
             df_prices["date_local"] = (
                 df_prices["date"].dt.tz_localize(None) - pd.Timedelta(hours=3)
             )
@@ -221,10 +210,13 @@ st.markdown(
 with st.sidebar:
     st.markdown("### 📦 Produtos monitorados")
     st.markdown(
-        "Dados carregados de um **banco remoto** (`scraping.db`) "
-        "hospedado em **GitHub RAW**."
+        "Dados carregados de um **banco local** (`scraping.db`) "
+        "que está dentro do repositório."
     )
-    st.markdown("GitHub Actions atualiza esse arquivo periodicamente.")
+    st.markdown(
+        "Você roda o *scraper* na sua máquina, ele atualiza o `scraping.db`, "
+        "e depois você faz **commit/push** desse arquivo para o GitHub."
+    )
     st.markdown(
         "[🔗 Repositório no GitHub]"
         "(https://github.com/guilhermepires06/amazon-price-monitor)"
@@ -234,7 +226,7 @@ with st.sidebar:
     st.markdown("🧠 Eduardo Feres")
     st.markdown("👨‍💻 Guilherme Pires")
     st.markdown("---")
-    st.markdown("📌 *Dashboard somente leitura (não altera o banco remoto).*")
+    st.markdown("📌 *Dashboard somente leitura (não altera o banco).*")
     st.markdown("© 2025 - Amazon Price Monitor")
 
 
@@ -249,7 +241,7 @@ with title_col:
 
 with ver_col:
     st.markdown(
-        '<div class="version-chip">v2 • dashboard.py (DB remoto)</div>',
+        '<div class="version-chip">v2 • dashboard.py (DB local do repositório)</div>',
         unsafe_allow_html=True,
     )
 
@@ -262,8 +254,9 @@ df_products, df_prices = get_data()
 
 if df_products.empty or df_prices.empty:
     st.warning(
-        "Não foi possível carregar dados do banco remoto neste momento. "
-        "Verifique se o `scraping.db` remoto possui dados em `products` e `prices`."
+        "Não foi possível carregar dados do banco local neste momento.\n\n"
+        "Verifique se o `scraping.db` que está no repositório possui dados "
+        "nas tabelas `products` e `prices`."
     )
     st.stop()
 
@@ -275,7 +268,7 @@ else:
 
 st.markdown(
     f"""<div class="last-update-pill">
-        🕒 Última data registrada no banco remoto: <strong>{global_last_str}</strong>
+        🕒 Última data registrada no banco: <strong>{global_last_str}</strong>
     </div>""",
     unsafe_allow_html=True,
 )
