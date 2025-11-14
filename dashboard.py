@@ -19,7 +19,7 @@ from utils import extract_price
 
 DB_NAME = "scraping.db"
 
-# URL RAW do banco no GitHub
+# URL RAW do banco no GitHub (ATUALMENTE NÃO ESTÁ SENDO USADA)
 GITHUB_DB_URL = "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"
 
 
@@ -50,8 +50,11 @@ def ensure_schema():
     conn.close()
 
 
+# Garante schema no banco local inicial
+ensure_schema()
+
 # =============================================================================
-# SINCRONIZAÇÃO COM GITHUB
+# (OPCIONAL) SINCRONIZAÇÃO COM GITHUB - **NÃO USADA NO APP**
 # =============================================================================
 
 
@@ -60,11 +63,10 @@ def sync_db_from_github():
     Baixa o scraping.db diretamente do GitHub (URL RAW) e sobrescreve o arquivo local.
 
     IMPORTANTE:
-    - Isso vai APAGAR alterações locais (produtos adicionados/removidos localmente).
-    - Depois de baixar, chamamos ensure_schema() para garantir a coluna image_url.
+    - NÃO está sendo chamado em nenhum lugar do painel.
+    - Se você rodar isso manualmente, ele vai APAGAR alterações locais.
     """
     if not GITHUB_DB_URL:
-        # URL não configurada, mantém banco local
         return
 
     try:
@@ -79,12 +81,7 @@ def sync_db_from_github():
         print("[sync_db_from_github] Banco atualizado a partir do GitHub.")
     except Exception as e:
         print(f"[sync_db_from_github] Erro ao baixar banco do GitHub: {e}")
-        # Opcional: mostrar aviso na interface
-        # st.warning("Não foi possível atualizar o banco a partir do GitHub. Usando versão local.")
 
-
-# Garante schema no banco local inicial
-ensure_schema()
 
 # =============================================================================
 # CACHE – HTML
@@ -105,12 +102,11 @@ def cached_html(url: str) -> str:
 
 def get_data():
     """
-    Lê products e prices do banco.
+    Lê products e prices do banco LOCAL.
 
     ATENÇÃO:
-    - NÃO sincronizamos mais automaticamente com o GitHub aqui.
-    - Senão, toda vez que o app recarrega, ele sobrescreve o banco local,
-      apagando inclusões/remoções feitas via interface.
+    - NÃO sincroniza com o GitHub aqui.
+    - Assim, tudo que você adicionar/excluir na interface permanece no arquivo scraping.db.
     """
     conn = sqlite3.connect(DB_NAME)
     df_products = pd.read_sql_query("SELECT * FROM products", conn)
@@ -392,17 +388,6 @@ with st.sidebar:
         "O sistema tentará buscar automaticamente o título e a imagem."
     )
 
-    # Botão para sincronizar do GitHub manualmente
-    if st.button("🔄 Atualizar banco a partir do GitHub"):
-        sync_db_from_github()
-        st.success(
-            "Banco atualizado a partir do GitHub. "
-            "Atenção: alterações locais foram sobrescritas."
-        )
-        st.rerun()
-
-    st.markdown("---")
-
     new_url = st.text_input("URL do produto na Amazon")
     new_name = st.text_input("Nome do produto (opcional)")
 
@@ -437,9 +422,8 @@ with st.sidebar:
 
     st.markdown("---")
     st.caption(
-        "Este painel lê o banco **`scraping.db`**.\n\n"
-        "Use o botão acima para baixar a versão atualizada do GitHub "
-        "(isso sobrescreve alterações locais)."
+        "Este painel lê e grava diretamente no banco local **`scraping.db`**.\n"
+        "O GitHub não está mais sobrescrevendo seus cadastros."
     )
 
 # =============================================================================
