@@ -282,12 +282,12 @@ for _, product in df_products.iterrows():
                 st.markdown(metrics_html, unsafe_allow_html=True)
 
                 st.write(
-                    f"**1. Tendência:** O preço variou de R$:  {first:.2f} para R$:  {last:.2f} "
+                    f"**1. Tendência:** O preço variou de R$:  {first: .2f} para R$:  {last: .2f} "
                     f"({diff:+.2f}, {pct:+.1f}%)."
                 )
 
                 st.write(
-                    f"**2. Faixa:** mínimo R$ {min_p:.2f}, máximo R$:  {max_p:.2f}, média R$:  {mean_p:.2f}."
+                    f"**2. Faixa:** mínimo R$:  {min_p:.2f}, máximo R$:  {max_p: .2f}, média R$:  {mean_p: .2f}."
                 )
 
                 if last == min_p:
