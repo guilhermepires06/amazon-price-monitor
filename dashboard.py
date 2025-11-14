@@ -129,6 +129,29 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+    /* =======================
+       SIDEBAR FIXO
+       ======================= */
+    [data-testid="stSidebar"] {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        z-index: 100;
+    }
+
+    /* Conteúdo principal deslocado para a direita
+       para não ficar embaixo da sidebar */
+    [data-testid="stAppViewContainer"] {
+        margin-left: 18rem; /* ajuste se quiser mais/menos espaço */
+    }
+
+    /* Evita rolagem estranha dentro da sidebar */
+    [data-testid="stSidebar"] > div {
+        height: 100%;
+        overflow-y: auto;
+    }
+
     .detail-card {
         padding: 1rem;
         border-radius: 0.9rem;
@@ -277,7 +300,6 @@ for _, product in df_products.iterrows():
                         ("estável", "neutral")
                     )
 
-                    # ------- LINHA DAS MÉTRICAS (CORRIGIDA) -------
                     metrics_html = (
                         f'<div>'
                         f'<span class="metric-badge {trend[1]}">Tendência: {trend[0]}</span>'
@@ -287,7 +309,6 @@ for _, product in df_products.iterrows():
                         f'</div>'
                     )
                     st.markdown(metrics_html, unsafe_allow_html=True)
-                    # ------------------------------------------------
 
                     st.write(
                         f"**1. Tendência:** O preço variou de R$ {first:.2f} para R$ {last:.2f} "
