@@ -13,7 +13,17 @@ from bs4 import BeautifulSoup
 
 from utils import extract_price  # converte texto de preço em float
 
+# =============================================================================
+# CONFIG BÁSICA
+# =============================================================================
+
 DB_NAME = "scraping.db"
+
+# 🔥 COLOQUE AQUI A URL RAW DO SEU ARQUIVO scraping.db NO GITHUB
+# Exemplo:
+# GITHUB_DB_URL = "https://raw.githubusercontent.com/seu-usuario/seu-repo/main/scraping.db"
+GITHUB_DB_URL = "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"  # <-- ALTERE AQUI
+
 
 HEADERS = {
     "User-Agent": (
@@ -45,6 +55,35 @@ def ensure_schema():
 ensure_schema()
 
 # =============================================================================
+# SINCRONIZAÇÃO COM GITHUB
+# =============================================================================
+
+
+def sync_db_from_github():
+    """
+    Baixa o scraping.db diretamente do GitHub (URL RAW) e sobrescreve o arquivo local.
+
+    Isso garante que os dados usados no gráfico sejam sempre a versão
+    mais recente gerada pelo GitHub Actions.
+    """
+    if not GITHUB_DB_URL:
+        # URL não configurada, mantém banco local
+        return
+
+    try:
+        resp = requests.get(GITHUB_DB_URL, timeout=20)
+        resp.raise_for_status()
+        with open(DB_NAME, "wb") as f:
+            f.write(resp.content)
+        # st.info("Banco atualizado a partir do GitHub.")  # opcional
+    except Exception as e:
+        # Se der erro, usa o banco local e apenas avisa no log/console
+        print(f"[sync_db_from_github] Erro ao baixar banco do GitHub: {e}")
+        # Opcional: mostrar aviso na interface
+        # st.warning("Não foi possível atualizar o banco a partir do GitHub. Usando versão local.")
+
+
+# =============================================================================
 # CACHE – HTML
 # =============================================================================
 
@@ -62,6 +101,14 @@ def cached_html(url: str) -> str:
 
 
 def get_data():
+    """
+    Lê products e prices do banco.
+
+    Antes de ler, força uma sincronização com o arquivo do GitHub
+    (se GITHUB_DB_URL estiver configurada).
+    """
+    sync_db_from_github()
+
     conn = sqlite3.connect(DB_NAME)
     df_products = pd.read_sql_query("SELECT * FROM products", conn)
     df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
@@ -270,7 +317,7 @@ st.markdown(
         font-weight: 600;
         color: #e5e7eb;
         margin-bottom: 0.4rem;
-        min-height: 2.4em;        /* 2 linhas fixas */
+        min-height: 2.4em;
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
@@ -286,7 +333,7 @@ st.markdown(
     }
 
     .card-img-box {
-        height: 140px;            /* área fixa da imagem */
+        height: 140px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -555,7 +602,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
         st.markdown("</div>", unsafe_allow_html=True)
 
 # ----------------------------------------------------------------------------- #
-# GRID DE CARDS – PRODUTOS MONITORADOS  (ÚNICO GRID!)
+# GRID DE CARDS – PRODUTOS MONITORADOS
 # ----------------------------------------------------------------------------- #
 
 st.markdown("## Produtos monitorados")
@@ -566,15 +613,12 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
     col = cols[idx % 3]
 
     with col:
-        # card único, menor, com tudo dentro
         with st.container(border=True):
-            # título
             st.markdown(
                 f'<div class="card-title">{product["name"]}</div>',
                 unsafe_allow_html=True,
             )
 
-            # imagem
             img_url = product.get("image_url")
             if not img_url:
                 img_url = get_product_image(product["url"])
@@ -603,7 +647,6 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                 )
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # preço
             latest_price = get_latest_price(df_prices, product["id"])
             if latest_price is not None:
                 st.markdown(
@@ -616,7 +659,6 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                     unsafe_allow_html=True,
                 )
 
-            # botões
             b1, b2 = st.columns(2)
             with b1:
                 if st.button("Ver detalhes", key=f"view_{product['id']}"):
