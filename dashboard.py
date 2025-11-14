@@ -265,22 +265,16 @@ st.markdown(
         color: #e5e7eb !important;
     }
 
-    /* FLAG usada para identificar o container do card */
-    .product-card-flag {
-        display: none;
-    }
-
-    /* O PAI que contém a flag vira o CARD */
-    div:has(> .product-card-flag) {
+    /* Deixa todo container com cara de card */
+    [data-testid="stContainer"] {
         background: #020617;
         border-radius: 0.8rem;
         border: 1px solid rgba(148,163,184,0.4);
         box-shadow: 0 10px 25px rgba(15,23,42,0.75);
         padding: 0.9rem 0.9rem 0.8rem 0.9rem;
-        margin-bottom: 1.5rem;
-        min-height: 360px; /* força altura parecida entre todos */
     }
 
+    /* Título do card */
     .product-title {
         font-size: 0.90rem;
         font-weight: 600;
@@ -301,13 +295,19 @@ st.markdown(
         margin-bottom: 0.4rem;
     }
 
+    .product-img-box {
+        height: 180px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 0.4rem;
+    }
+
     .detail-card {
         padding: 1.25rem;
         border-radius: 1rem;
         background: #020617;
         border: 1px solid rgba(148,163,184,0.5);
-        margin-top: 0.5rem;
-        margin-bottom: 1.5rem;
         box-shadow: 0 18px 45px rgba(15,23,42,0.9);
     }
 
@@ -424,7 +424,7 @@ if df_products.empty:
 sns.set_style("whitegrid")
 
 # ----------------------------------------------------------------------------- #
-# BLOCO DE DETALHES (PAINEL FIXO)
+# BLOCO DE DETALHES
 # ----------------------------------------------------------------------------- #
 
 selected_id = st.session_state.get("selected_product_id")
@@ -578,30 +578,28 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
     col = cols[idx % 3]
 
     with col:
-        # Container lógico do Streamlit
+        # Cada container agora É o card
         with st.container():
-            # FLAG para o CSS identificar este bloco como card
-            st.markdown('<div class="product-card-flag"></div>', unsafe_allow_html=True)
-
-            # TÍTULO
+            # Título
             st.markdown(
                 f'<div class="product-title">{product["name"]}</div>',
                 unsafe_allow_html=True,
             )
 
-            # IMAGEM
+            # Imagem (sempre mesma área)
             img_url = product.get("image_url")
             if not img_url:
                 img_url = get_product_image(product["url"])
 
+            st.markdown('<div class="product-img-box">', unsafe_allow_html=True)
             if img_url:
-                st.image(img_url, width=230)
+                st.image(img_url, width=220)
             else:
                 st.markdown(
                     """
                     <div style="
-                        width: 230px;
-                        height: 180px;
+                        width: 220px;
+                        height: 160px;
                         background: #111827;
                         border-radius: 8px;
                         border: 1px solid #334155;
@@ -609,15 +607,15 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                         align-items: center;
                         justify-content: center;
                         font-size: 0.8rem;
-                        color: #64748b;
-                        margin: 0 auto 0.4rem auto;">
+                        color: #64748b;">
                         Imagem indisponível
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
+            st.markdown("</div>", unsafe_allow_html=True)
 
-            # PREÇO
+            # Preço
             latest_price = get_latest_price(df_prices, product["id"])
             if latest_price is not None:
                 st.markdown(
@@ -630,7 +628,7 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                     unsafe_allow_html=True,
                 )
 
-            # BOTÕES
+            # Botões
             b1, b2 = st.columns(2)
             with b1:
                 if st.button("Ver detalhes", key=f"view_{product['id']}"):
