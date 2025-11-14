@@ -188,7 +188,7 @@ with st.sidebar:
     st.markdown("[🔗 Repositório no GitHub](https://github.com/guilhermepires06/amazon-price-monitor)")
     st.markdown("---")
     st.markdown("**Sistema desenvolvido por:**")
-    st.markdown("🧠 Eduardo Feres\n👨‍💻 Guilherme Pires")
+    st.markdown("🧠 Eduardo Feres\n 👨‍💻 Guilherme Pires")
     st.markdown("---")
     st.markdown("📌 *Dashboard em modo somente leitura.*")
     st.markdown("© 2025 - Amazon Price Monitor")
