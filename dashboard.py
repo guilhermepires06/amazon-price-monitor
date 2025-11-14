@@ -335,72 +335,84 @@ st.markdown(
         color: #e5e7eb;
     }
 
-    /* CARD DOS PRODUTOS ----------------------------------------------------- */
-    .product-card-flag {
-        display: none;
-    }
-
-    /* O container do card */
-    div:has(> .product-card-flag) {
+    /* CARD DOS PRODUTOS (quadrado azul) ------------------------------------ */
+    .product-card {
         position: relative;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        gap: 0.55rem;
+        gap: 0.45rem;
         background: radial-gradient(circle at top left, #020617, #020617 40%, #020617 100%);
         border-radius: 1rem;
         border: 1px solid rgba(148,163,184,0.45);
         box-shadow: 0 12px 35px rgba(15,23,42,0.9);
         padding: 0.9rem 1rem 0.9rem 1rem;
-        margin-bottom: 1.7rem;
-        min-height: 360px;
+        min-height: 320px;
         transition: all 0.18s ease-out;
         overflow: hidden;
     }
-    div:has(> .product-card-flag)::before {
+    .product-card::before {
         content: "";
         position: absolute;
         inset: 0;
-        background: radial-gradient(circle at top right, rgba(56,189,248,0.08), transparent 55%);
+        background: radial-gradient(circle at top right, rgba(56,189,248,0.10), transparent 55%);
         opacity: 0.9;
         pointer-events: none;
     }
-    div:has(> .product-card-flag):hover {
+    .product-card:hover {
         transform: translateY(-4px);
         box-shadow: 0 20px 50px rgba(15,23,42,0.95);
         border-color: rgba(129,140,248,0.8);
+    }
+    .product-card-inner {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
     }
 
     .product-title {
         font-size: 0.90rem;
         font-weight: 600;
         color: #e5e7eb;
-        margin-bottom: 0.35rem;
+        margin-bottom: 0.25rem;
         min-height: 2.6em;
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
-        position: relative;
-        z-index: 1;
     }
 
     .product-image-wrapper {
-        position: relative;
-        z-index: 1;
         width: 100%;
+        text-align: center;
+        margin: 0.25rem 0 0.5rem 0;
+    }
+    .product-image-wrapper img {
+        max-width: 230px;
+        max-height: 170px;
+        width: 100%;
+        object-fit: contain;
+        border-radius: 0.75rem;
+    }
+    .product-image-placeholder {
+        width: 100%;
+        height: 170px;
+        background: #111827;
+        border-radius: 0.75rem;
+        border: 1px solid #334155;
         display: flex;
-        justify-content: center;
         align-items: center;
-        margin: 0.25rem 0 0.4rem 0;
+        justify-content: center;
+        font-size: 0.8rem;
+        color: #64748b;
     }
 
-    .product-price {
-        font-size: 1.05rem;
-        font-weight: 700;
-        margin-top: 0.2rem;
-        color: #a5b4fc;
-        margin-bottom: 0.3rem;
+    .product-card-footer {
+        margin-top: auto;
+        padding-top: 0.35rem;
+        border-top: 1px dashed rgba(55,65,81,0.8);
     }
 
     .product-price-badge {
@@ -413,14 +425,6 @@ st.markdown(
         background: rgba(15,23,42,0.9);
         border: 1px solid rgba(129,140,248,0.6);
         color: #ede9fe;
-    }
-
-    .product-card-footer {
-        position: relative;
-        z-index: 1;
-        margin-top: auto;
-        padding-top: 0.35rem;
-        border-top: 1px dashed rgba(55,65,81,0.8);
     }
 
     /* DETALHES DO PRODUTO --------------------------------------------------- */
@@ -733,79 +737,48 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
     col = cols[idx % 3]
 
     with col:
-        with st.container():
-            # FLAG para o CSS identificar este bloco como card
-            st.markdown('<div class="product-card-flag"></div>', unsafe_allow_html=True)
+        latest_price = get_latest_price(df_prices, product["id"])
+        img_url = product.get("image_url")
+        if not img_url:
+            img_url = get_product_image(product["url"])
 
-            # TÍTULO
-            st.markdown(
-                f'<div class="product-title">{product["name"]}</div>',
-                unsafe_allow_html=True,
-            )
+        # Monta o card inteiro em HTML (título, imagem e preço) – tudo dentro do quadrado azul
+        if img_url:
+            img_block = f'<img src="{img_url}" alt="Imagem do produto" />'
+        else:
+            img_block = '<div class="product-image-placeholder">Imagem indisponível</div>'
 
-            # IMAGEM
-            img_url = product.get("image_url")
-            if not img_url:
-                img_url = get_product_image(product["url"])
+        price_text = (
+            f'<span class="product-price-badge">💰 R$ {latest_price:.2f}</span>'
+            if latest_price is not None
+            else '<span class="product-price-badge">Sem preço ainda</span>'
+        )
 
-            st.markdown('<div class="product-image-wrapper">', unsafe_allow_html=True)
-            if img_url:
-                st.image(img_url, width=230)
-            else:
-                st.markdown(
-                    """
-                    <div style="
-                        width: 230px;
-                        height: 180px;
-                        background: #111827;
-                        border-radius: 0.75rem;
-                        border: 1px solid #334155;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: 0.8rem;
-                        color: #64748b;
-                        margin: 0 auto 0.2rem auto;">
-                        Imagem indisponível
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-            st.markdown("</div>", unsafe_allow_html=True)
+        card_html = f"""
+        <div class="product-card">
+          <div class="product-card-inner">
+            <div class="product-title">{product["name"]}</div>
+            <div class="product-image-wrapper">
+              {img_block}
+            </div>
+            <div class="product-card-footer">
+              {price_text}
+            </div>
+          </div>
+        </div>
+        """
 
-            # FOOTER DO CARD (preço + botões sempre alinhados na parte de baixo)
-            st.markdown('<div class="product-card-footer">', unsafe_allow_html=True)
+        st.markdown(card_html, unsafe_allow_html=True)
 
-            latest_price = get_latest_price(df_prices, product["id"])
-            if latest_price is not None:
-                st.markdown(
-                    f"""
-                    <div class="product-price">
-                        <span class="product-price-badge">💰 R$ {latest_price:.2f}</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    """
-                    <div class="product-price">
-                        <span class="product-price-badge">Sem preço ainda</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            b1, b2 = st.columns(2)
-            with b1:
-                if st.button("Ver detalhes", key=f"view_{product['id']}"):
-                    st.session_state["selected_product_id"] = product["id"]
-                    st.rerun()
-            with b2:
-                if st.button("🗑 Excluir", key=f"del_{product['id']}"):
-                    delete_product_from_db(product["id"])
-                    if st.session_state.get("selected_product_id") == product["id"]:
-                        st.session_state["selected_product_id"] = None
-                    st.rerun()
-
-            st.markdown("</div>", unsafe_allow_html=True)
+        # Botões de ação (ficam logo abaixo do card)
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("Ver detalhes", key=f"view_{product['id']}"):
+                st.session_state["selected_product_id"] = product["id"]
+                st.rerun()
+        with b2:
+            if st.button("🗑 Excluir", key=f"del_{product['id']}"):
+                delete_product_from_db(product["id"])
+                if st.session_state.get("selected_product_id") == product["id"]:
+                    st.session_state["selected_product_id"] = None
+                st.rerun()
