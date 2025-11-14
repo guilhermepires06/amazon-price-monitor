@@ -1,5 +1,7 @@
 import sqlite3
 import json
+import os
+import tempfile
 from datetime import datetime, timedelta
 
 import matplotlib.pyplot as plt
@@ -17,7 +19,10 @@ from utils import extract_price
 # CONFIG BÁSICA
 # =============================================================================
 
-DB_NAME = "scraping.db"  # arquivo local, versionado no próprio repositório
+# FONTE ÚNICA DO BANCO → sempre o arquivo que está no GitHub
+GITHUB_DB_URL = (
+    "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"
+)
 
 HEADERS = {
     "User-Agent": (
@@ -30,24 +35,49 @@ HEADERS = {
 
 
 # =============================================================================
-# BANCO – LENDO DIRETO O scraping.db LOCAL
+# BANCO – SEMPRE DO GITHUB
 # =============================================================================
 
-@st.cache_data(show_spinner=False, ttl=120)
+@st.cache_data(show_spinner=False, ttl=300)
 def get_data():
     """
-    Lê o scraping.db local (que veio do GitHub).
-    Interpreta o campo `date` como UTC e converte para horário de Brasília.
-    Não altera os valores de price.
+    Baixa o scraping.db diretamente do GitHub (RAW),
+    grava em arquivo temporário e lê com sqlite.
+
+    • Se der erro de rede/HTTP, mostra st.error e levanta exceção.
+    • Se o banco estiver vazio, não é erro: só volta DataFrames vazios.
     """
     try:
-        conn = sqlite3.connect(DB_NAME)
+        resp = requests.get(GITHUB_DB_URL, headers=HEADERS, timeout=30)
+    except requests.RequestException as e:
+        st.error(f"❌ Erro ao baixar o banco do GitHub: {e}")
+        raise
+
+    if resp.status_code != 200:
+        st.error(
+            f"❌ Falha ao baixar scraping.db do GitHub. "
+            f"Status HTTP: {resp.status_code}"
+        )
+        raise RuntimeError(f"HTTP {resp.status_code} ao baixar scraping.db")
+
+    # grava conteúdo em um arquivo .db temporário
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp:
+        tmp.write(resp.content)
+        tmp_path = tmp.name
+
+    try:
+        conn = sqlite3.connect(tmp_path)
         df_products = pd.read_sql_query("SELECT * FROM products", conn)
         df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
         conn.close()
     except Exception as e:
-        st.error(f"❌ Erro ao ler o banco local '{DB_NAME}': {e}")
-        return pd.DataFrame(), pd.DataFrame()
+        st.error(f"❌ Erro ao ler o arquivo de banco de dados: {e}")
+        raise
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
     # Ajuste de datas
     if "date" in df_prices.columns:
@@ -62,6 +92,7 @@ def get_data():
                 .dt.tz_localize(None)
             )
         except Exception:
+            # fallback: assume horário UTC-3 sem timezone
             df_prices["date_local"] = (
                 df_prices["date"].dt.tz_localize(None) - pd.Timedelta(hours=3)
             )
@@ -196,7 +227,7 @@ st.markdown(
 
 with st.sidebar:
     st.markdown("### 📦 Produtos monitorados")
-    st.markdown("Dados carregados do banco local `scraping.db` (versão no repositório).")
+    st.markdown("Dados carregados **100% do scraping.db do GitHub**.")
     st.markdown("GitHub Actions atualiza o banco e faz commit periodicamente.")
     st.markdown("[🔗 Repositório no GitHub](https://github.com/guilhermepires06/amazon-price-monitor)")
     st.markdown("---")
@@ -220,14 +251,20 @@ with ver_col:
     st.markdown('<div class="version-chip">v2 • dashboard.py</div>', unsafe_allow_html=True)
 
 with btn_col:
-    if st.button("🔄 Atualizar cache", use_container_width=True):
-        get_data.clear()
+    if st.button("🔄 Atualizar agora", use_container_width=True):
+        get_data.clear()   # limpa cache
         st.rerun()
 
-df_products, df_prices = get_data()
+# tenta carregar dados do GitHub
+try:
+    df_products, df_prices = get_data()
+except Exception:
+    st.warning("Não foi possível carregar dados do banco remoto no momento.")
+    st.stop()
 
+# se realmente estiver vazio, avisa e para
 if df_products.empty or df_prices.empty:
-    st.warning("Não foi possível carregar dados do banco local no momento.")
+    st.warning("Banco remoto sem dados em products/prices. Verifique o scraping.db.")
     st.stop()
 
 if df_prices["date_local"].notna().any():
