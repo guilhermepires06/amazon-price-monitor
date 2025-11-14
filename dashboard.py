@@ -326,7 +326,38 @@ st.markdown(
         gap: 0.35rem;
         align-items: center;
     }
-    </style>
+   
+.card-fixed {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    padding: 16px;
+    min-height: 330px;      /* 🔥 ALTURA FIXA DO CARD */
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    margin-bottom: 25px;    /* 🔥 ESPAÇO ENTRE AS LINHAS */
+}
+
+.card-img-box {
+    height: 150px;          /* 🔥 IMAGEM MENOR */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 12px;
+}
+
+.card-title {
+    font-size: .85rem;
+    margin-bottom: 6px;
+    min-height: 2.4em;      /* 🔥 TITULO FIXO EM 2 LINHAS */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+</style>
+
     """,
     unsafe_allow_html=True,
 )
@@ -568,65 +599,61 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
     col = cols[idx % 3]
 
     with col:
-        # Cada container é um card (tipo Mercado Livre)
-        with st.container(border=True):
-            # TÍTULO
+        # card com layout fixo
+        with st.container():
+            st.markdown('<div class="card-fixed">', unsafe_allow_html=True)
+
+            # título (2 linhas fixas)
             st.markdown(
                 f'<div class="card-title">{product["name"]}</div>',
-                unsafe_allow_html=True,
+                unsafe_allow_html=True
             )
 
-            # IMAGEM (área fixa)
-            img_url = product.get("image_url")
-            if not img_url:
-                img_url = get_product_image(product["url"])
+            # imagem com tamanho fixo
+            img_url = product.get("image_url") or get_product_image(product["url"])
 
             st.markdown('<div class="card-img-box">', unsafe_allow_html=True)
             if img_url:
-                st.image(img_url, width=220)
+                st.image(img_url, width=160)     # menorzinho 👍
             else:
                 st.markdown(
                     """
                     <div style="
-                        width: 220px;
-                        height: 160px;
+                        width: 160px;
+                        height: 120px;
                         background: #111827;
                         border-radius: 8px;
                         border: 1px solid #334155;
                         display: flex;
                         align-items: center;
                         justify-content: center;
-                        font-size: 0.8rem;
                         color: #64748b;">
-                        Imagem indisponível
+                        Sem imagem
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # PREÇO
+            # preço
             latest_price = get_latest_price(df_prices, product["id"])
-            if latest_price is not None:
+            if latest_price:
                 st.markdown(
-                    f'<div class="card-price">R$ {latest_price:.2f}</div>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    '<div class="card-price">Sem preço ainda</div>',
-                    unsafe_allow_html=True,
+                    f"<div class='card-price'>R$ {latest_price:.2f}</div>",
+                    unsafe_allow_html=True
                 )
 
-            # BOTÕES
+            # botões
             b1, b2 = st.columns(2)
+
             with b1:
                 if st.button("Ver detalhes", key=f"view_{product['id']}"):
                     st.session_state["selected_product_id"] = product["id"]
                     st.rerun()
+
             with b2:
                 if st.button("🗑 Excluir", key=f"del_{product['id']}"):
                     delete_product_from_db(product["id"])
-                    if st.session_state.get("selected_product_id") == product["id"]:
-                        st.session_state["selected_product_id"] = None
                     st.rerun()
+
+            st.markdown("</div>", unsafe_allow_html=True)
