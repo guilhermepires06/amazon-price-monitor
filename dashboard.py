@@ -594,20 +594,22 @@ cols = st.columns(3, gap="large")
 for idx, (_, product) in enumerate(df_products.iterrows()):
     col = cols[idx % 3]
     with col:
+
+        # ABRE O CARD
         st.markdown('<div class="product-card">', unsafe_allow_html=True)
 
-        # título dentro do card
+        # TÍTULO
         st.markdown(
             f'<div class="product-title">{product["name"]}</div>',
-            unsafe_allow_html=True,
+            unsafe_allow_html=True
         )
 
+        # IMAGEM DO PRODUTO
         img_url = product.get("image_url")
         if not img_url:
             img_url = get_product_image(product["url"])
 
         if img_url:
-            # imagem respeita o max-height do CSS, mantendo altura do card
             st.image(img_url, width=230)
         else:
             st.markdown(
@@ -630,23 +632,27 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                 unsafe_allow_html=True,
             )
 
+        # PREÇO
         latest_price = get_latest_price(df_prices, product["id"])
         if latest_price is not None:
             st.markdown(
                 f'<div class="product-price">R$ {latest_price:.2f}</div>',
-                unsafe_allow_html=True,
+                unsafe_allow_html=True
             )
         else:
             st.markdown(
                 '<div class="product-price">Sem preço ainda</div>',
-                unsafe_allow_html=True,
+                unsafe_allow_html=True
             )
 
+        # BOTÕES
         b1, b2 = st.columns(2)
+
         with b1:
             if st.button("Ver detalhes", key=f"view_{product['id']}"):
                 st.session_state["selected_product_id"] = product["id"]
                 st.rerun()
+
         with b2:
             if st.button("🗑 Excluir", key=f"del_{product['id']}"):
                 delete_product_from_db(product["id"])
@@ -654,4 +660,5 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                     st.session_state["selected_product_id"] = None
                 st.rerun()
 
+        # FECHA O CARD
         st.markdown("</div>", unsafe_allow_html=True)
