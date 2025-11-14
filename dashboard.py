@@ -264,7 +264,10 @@ st.markdown(
     h1, h2, h3, h4, h5, h6 {
         color: #e5e7eb !important;
     }
-    /* CARD ESTILO MERCADO LIVRE */
+
+    /* ===========================
+       CARD ESTILO MERCADO LIVRE
+       =========================== */
     .product-card {
         padding: 0.9rem 0.9rem 0.8rem 0.9rem;
         border-radius: 0.8rem;
@@ -277,31 +280,43 @@ st.markdown(
         flex-direction: column;
         align-items: stretch;
         justify-content: flex-start;
-        min-height: 280px;
+        /* AQUI: altura fixa para todos os cards ficarem iguais */
+        height: 380px;
+        box-sizing: border-box;
     }
     .product-card:hover {
         border-color: #38bdf8;
         box-shadow: 0 15px 35px rgba(56,189,248,0.25);
     }
+
     .product-title {
         font-size: 0.90rem;
         font-weight: 600;
         color: #e5e7eb;
         margin-bottom: 0.5rem;
-        min-height: 2.4em;
+        /* Altura fixa + truncamento em 2 linhas */
+        min-height: 2.6em;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
     }
+
     .product-card img {
         max-height: 180px;
         object-fit: contain;
         background: #020617;
         margin-bottom: 0.4rem;
     }
+
     .product-price {
         font-size: 1.05rem;
         font-weight: 700;
         margin-top: 0.2rem;
         color: #a5b4fc;
+        margin-bottom: 0.4rem;
     }
+
     .detail-card {
         padding: 1.25rem;
         border-radius: 1rem;
@@ -311,6 +326,7 @@ st.markdown(
         margin-bottom: 1.5rem;
         box-shadow: 0 18px 45px rgba(15,23,42,0.9);
     }
+
     .metric-badge {
         display: inline-block;
         padding: 0.25rem 0.7rem;
@@ -323,7 +339,9 @@ st.markdown(
     .metric-badge.positive { border: 1px solid #22c55e; }
     .metric-badge.negative { border: 1px solid #ef4444; }
     .metric-badge.neutral  { border: 1px solid #64748b; }
+
     a { color: #38bdf8 !important; }
+
     .last-update-pill {
         padding: 0.35rem 0.9rem;
         border-radius: 999px;
@@ -418,9 +436,9 @@ if df_products.empty:
 
 sns.set_style("whitegrid")
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------- #
 # BLOCO DE DETALHES (PAINEL FIXO)
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------- #
 
 selected_id = st.session_state.get("selected_product_id")
 
@@ -469,7 +487,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
                         st.info("Imagem removida.")
                     st.rerun()
             with del_col:
-                if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
+                if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"]:
                     delete_product_from_db(product["id"])
                     st.success("Produto removido.")
                     st.session_state["selected_product_id"] = None
@@ -561,9 +579,9 @@ if selected_id is not None and selected_id in df_products["id"].values:
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------- #
 # GRID DE CARDS
-# -----------------------------------------------------------------------------
+# ----------------------------------------------------------------------------- #
 
 st.markdown("## Produtos monitorados")
 
@@ -585,13 +603,14 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
             img_url = get_product_image(product["url"])
 
         if img_url:
+            # imagem respeita o max-height do CSS, mantendo altura do card
             st.image(img_url, width=230)
         else:
             st.markdown(
                 """
                 <div style="
                     width: 230px;
-                    height: 150px;
+                    height: 180px;
                     background: #111827;
                     border-radius: 8px;
                     border: 1px solid #334155;
@@ -600,7 +619,7 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                     justify-content: center;
                     font-size: 0.8rem;
                     color: #64748b;
-                    margin: 0 auto;">
+                    margin: 0 auto 0.4rem auto;">
                     Imagem indisponível
                 </div>
                 """,
