@@ -350,9 +350,15 @@ st.markdown(
     .metric-badge.negative { border: 1px solid #ef4444; }
     .metric-badge.neutral  { border: 1px solid #64748b; }
     a { color: #38bdf8 !important; }
-    .section-title {
-        margin-top: 1.5rem;
-        margin-bottom: 0.8rem;
+    .update-badge {
+        background: #0f172a;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 0.75rem;
+        border: 1px solid #38bdf8;
+        text-align: right;
+        color: #e5e7eb;
+        white-space: nowrap;
     }
     </style>
     """,
@@ -375,11 +381,49 @@ if "selected_product_id" not in st.session_state:
 if "confirm_delete_id" not in st.session_state:
     st.session_state["confirm_delete_id"] = None
 
-# Sidebar minimal
+# =========================
+# SIDEBAR (CADASTRO AQUI)
+# =========================
+
 with st.sidebar:
-    st.markdown("### ℹ️ Info")
+    st.markdown("## ➕ Adicionar produto da Amazon")
+    st.write(
+        "Cole a URL de um produto da Amazon e, se quiser, personalize o nome. "
+        "O sistema tenta buscar automaticamente o título e a imagem."
+    )
+
+    new_url = st.text_input("URL do produto na Amazon")
+    new_name = st.text_input("Nome do produto (opcional)")
+
+    if st.button("Adicionar produto", key="btn_add_prod_sidebar"):
+        if not new_url.strip():
+            st.error("Informe a URL do produto.")
+        else:
+            name_to_use = new_name.strip()
+            if not name_to_use:
+                st.info("Buscando título automaticamente na Amazon...")
+                auto_title = fetch_product_title(new_url)
+                name_to_use = auto_title or "Produto Amazon"
+
+            ok, msg = add_product_to_db(name_to_use, new_url)
+            if ok:
+                st.success(msg)
+                conn = sqlite3.connect(DB_NAME)
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM products WHERE url = ?", (new_url.strip(),))
+                row = cursor.fetchone()
+                conn.close()
+                if row:
+                    product_id = row[0]
+                    scrape_single_product(product_id, new_url.strip())
+                    st.session_state["selected_product_id"] = product_id
+                st.rerun()
+            else:
+                st.warning(msg)
+
+    st.markdown("---")
     st.caption(
-        "Este painel lê o banco `scraping.db` atualizado periodicamente "
+        "Este painel lê o banco `scraping.db` atualizado automaticamente "
         "pelo GitHub Actions."
     )
 
@@ -387,14 +431,42 @@ with st.sidebar:
 # CONTEÚDO PRINCIPAL
 # =========================
 
-st.title("💹 Monitor de Preços")
-
 df_products, df_prices = get_data()
 
+sns.set_style("whitegrid")
+
+# ----- Header com título + horário da última atualização -----
+col_title, col_update = st.columns([4, 1])
+
+with col_title:
+    st.markdown("# 💹 Monitor de Preços")
+
+with col_update:
+    if not df_prices.empty and df_prices["date_local"].notna().any():
+        last_ts = df_prices["date_local"].max()
+        # só data + hora (ou só hora se quiser)
+        display_ts = last_ts.strftime("%d/%m %H:%M")
+        st.markdown(
+            f"""
+            <div class="update-badge">
+                🕒 Última atualização:<br><strong>{display_ts}</strong>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            """
+            <div class="update-badge">
+                🕒 Última atualização:<br><strong>Sem dados</strong>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
 if df_products.empty:
-    st.warning("Nenhum produto cadastrado ainda. Use o cadastro abaixo para inserir um produto.")
-else:
-    sns.set_style("whitegrid")
+    st.warning("Nenhum produto cadastrado ainda. Use a barra lateral para inserir um produto.")
+    st.stop()
 
 selected_id = st.session_state.get("selected_product_id")
 confirm_delete_id = st.session_state.get("confirm_delete_id")
@@ -428,7 +500,7 @@ if confirm_delete_id is not None:
 
 # ============= DETALHE NO TOPO (SELECIONADO) =============
 
-if not df_products.empty and selected_id is not None and selected_id in df_products["id"].values:
+if selected_id is not None and selected_id in df_products["id"].values:
     product = df_products[df_products["id"] == selected_id].iloc[0]
     df_prod = df_prices[df_prices["product_id"] == selected_id].copy()
 
@@ -566,132 +638,67 @@ if not df_products.empty and selected_id is not None and selected_id in df_produ
 
 # ============= GRID DE CARDS =============
 
-if not df_products.empty:
-    st.markdown('<h3 class="section-title">Produtos monitorados</h3>', unsafe_allow_html=True)
+st.markdown("## Produtos monitorados")
 
-    cols = st.columns(3)
+cols = st.columns(3)
 
-    for idx, (_, product) in enumerate(df_products.iterrows()):
-        col = cols[idx % 3]
-        with col:
-            st.markdown('<div class="product-card">', unsafe_allow_html=True)
+for idx, (_, product) in enumerate(df_products.iterrows()):
+    col = cols[idx % 3]
+    with col:
+        st.markdown('<div class="product-card">', unsafe_allow_html=True)
 
+        st.markdown(
+            f'<div class="product-header">{product["name"]}</div>',
+            unsafe_allow_html=True,
+        )
+
+        img_url = product.get("image_url")
+        if not img_url:
+            img_url = get_product_image(product["url"])
+
+        if img_url:
+            st.image(img_url, width=220)
+        else:
             st.markdown(
-                f'<div class="product-header">{product["name"]}</div>',
+                """
+                <div style="
+                    width: 220px;
+                    height: 150px;
+                    background: #111827;
+                    border-radius: 8px;
+                    border: 1px solid #334155;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 0.8rem;
+                    color: #64748b;
+                    margin: 0 auto 0.5rem auto;">
+                    Imagem indisponível
+                </div>
+                """,
                 unsafe_allow_html=True,
             )
 
-            img_url = product.get("image_url")
-            if not img_url:
-                img_url = get_product_image(product["url"])
-
-            if img_url:
-                st.image(img_url, width=220)
-            else:
-                st.markdown(
-                    """
-                    <div style="
-                        width: 220px;
-                        height: 150px;
-                        background: #111827;
-                        border-radius: 8px;
-                        border: 1px solid #334155;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: 0.8rem;
-                        color: #64748b;
-                        margin: 0 auto 0.5rem auto;">
-                        Imagem indisponível
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-            latest_price = get_latest_price(df_prices, product["id"])
-            if latest_price is not None:
-                st.markdown(
-                    f'<div class="product-price">R$ {latest_price:.2f}</div>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    '<div class="product-price">Sem preço ainda</div>',
-                    unsafe_allow_html=True,
-                )
-
-            b1, b2 = st.columns(2)
-            with b1:
-                if st.button("Ver detalhes", key=f"view_{product['id']}"):
-                    st.session_state["selected_product_id"] = product["id"]
-                    st.rerun()
-            with b2:
-                if st.button("🗑 Excluir", key=f"del_{product['id']}"):
-                    st.session_state["confirm_delete_id"] = product["id"]
-                    st.rerun()
-
-            st.markdown("</div>", unsafe_allow_html=True)
-
-# ============= CADASTRO (EXPANDER FECHADO) =============
-
-st.markdown('<h3 class="section-title">Cadastro de produtos</h3>', unsafe_allow_html=True)
-
-with st.expander("➕ Cadastrar novo produto da Amazon", expanded=False):
-    st.write(
-        "Cole a URL de um produto da Amazon e, se quiser, personalize o nome. "
-        "O sistema tentará buscar automaticamente o título e a imagem."
-    )
-    new_url = st.text_input("URL do produto na Amazon", key="cad_url")
-    new_name = st.text_input("Nome do produto (opcional)", key="cad_name")
-
-    if st.button("Adicionar produto", key="btn_add_prod"):
-        if not new_url.strip():
-            st.error("Informe a URL do produto.")
+        latest_price = get_latest_price(df_prices, product["id"])
+        if latest_price is not None:
+            st.markdown(
+                f'<div class="product-price">R$ {latest_price:.2f}</div>',
+                unsafe_allow_html=True,
+            )
         else:
-            name_to_use = new_name.strip()
-            if not name_to_use:
-                st.info("Buscando título automaticamente na Amazon...")
-                auto_title = fetch_product_title(new_url)
-                name_to_use = auto_title or "Produto Amazon"
+            st.markdown(
+                '<div class="product-price">Sem preço ainda</div>',
+                unsafe_allow_html=True,
+            )
 
-            ok, msg = add_product_to_db(name_to_use, new_url)
-            if ok:
-                st.success(msg)
-                conn = sqlite3.connect(DB_NAME)
-                cursor = conn.cursor()
-                cursor.execute("SELECT id FROM products WHERE url = ?", (new_url.strip(),))
-                row = cursor.fetchone()
-                conn.close()
-                if row:
-                    product_id = row[0]
-                    scrape_single_product(product_id, new_url.strip())
-                    st.session_state["selected_product_id"] = product_id
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("Ver detalhes", key=f"view_{product['id']}"):
+                st.session_state["selected_product_id"] = product["id"]
                 st.rerun()
-            else:
-                st.warning(msg)
+        with b2:
+            if st.button("🗑 Excluir", key=f"del_{product['id']}"):
+                st.session_state["confirm_delete_id"] = product["id"]
+                st.rerun()
 
-# ============= LOG DE ATUALIZAÇÕES =============
-
-st.markdown('<h3 class="section-title">📜 Log de atualizações recentes</h3>', unsafe_allow_html=True)
-
-if df_prices.empty:
-    st.info("Ainda não há registros de preços no histórico.")
-else:
-    df_log = df_prices.sort_values("date_local", ascending=False).head(20)
-    df_log = df_log.merge(
-        df_products[["id", "name"]],
-        left_on="product_id",
-        right_on="id",
-        how="left",
-    )
-
-    df_log_view = df_log[["date_local", "name", "price", "old_price"]].rename(
-        columns={
-            "date_local": "Data/Hora (BR)",
-            "name": "Produto",
-            "price": "Preço atual (R$)",
-            "old_price": "Preço antigo (R$)",
-        }
-    )
-
-    st.dataframe(df_log_view, width="stretch")
+        st.markdown("</div>", unsafe_allow_html=True)
