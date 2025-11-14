@@ -1,13 +1,11 @@
 import sqlite3
-from datetime import datetime, timezone
 import time
-import json
-import re
+from datetime import datetime, timezone
 
 import requests
 from bs4 import BeautifulSoup
 
-from utils import extract_price  # já existe no seu projeto
+from utils import extract_price
 
 # =============================================================================
 # CONFIG
@@ -26,7 +24,7 @@ HEADERS = {
 
 
 # =============================================================================
-# FUNÇÕES AUXILIARES
+# BANCO / SCHEMA
 # =============================================================================
 
 def get_conn():
@@ -35,7 +33,7 @@ def get_conn():
 
 def ensure_schema():
     """
-    Garante que as tabelas básicas existam.
+    Garante que as tabelas products e prices existam.
     Não apaga nada, só cria se não existir.
     """
     conn = get_conn()
@@ -68,48 +66,88 @@ def ensure_schema():
     conn.close()
 
 
-def fetch_html(url: str) -> str | None:
+# =============================================================================
+# FUNÇÕES DE SCRAPING
+# =============================================================================
+
+def fetch_html(url: str, timeout: int = 25) -> str | None:
+    """
+    Faz GET na página da Amazon e retorna o HTML em texto.
+    Retorna None em caso de erro.
+    """
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=30)
+        resp = requests.get(url, headers=HEADERS, timeout=timeout)
         resp.raise_for_status()
         return resp.text
     except Exception as e:
-        print(f"[ERRO] Falha ao buscar HTML para {url}: {e}")
+        print(f"[ERRO] Falha ao buscar HTML de {url}: {e}")
         return None
 
 
 def parse_price_from_html(html: str) -> float | None:
     """
-    Tenta extrair o preço da página da Amazon.
-    Usa alguns seletores comuns e cai no extract_price no fim.
+    Tenta extrair o preço a partir do HTML usando vários seletores.
+    Se falhar, usa extract_price() em cima do texto da página.
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    # 1. Preços padrão
-    span = soup.find("span", id="priceblock_ourprice") or soup.find(
-        "span", id="priceblock_dealprice"
-    )
+    # 1) IDs clássicos da Amazon
+    for span_id in [
+        "priceblock_ourprice",
+        "priceblock_dealprice",
+        "priceblock_saleprice",
+        "corePrice_feature_div",
+    ]:
+        span = soup.find("span", id=span_id)
+        if span and span.get_text(strip=True):
+            price = extract_price(span.get_text())
+            if price is not None and price > 1:
+                return price
+
+    # 2) Estrutura nova: .a-price .a-offscreen
+    span = soup.select_one(".a-price .a-offscreen")
     if span and span.get_text(strip=True):
-        price = extract_price(span.get_text(strip=True))
-        if price is not None:
+        price = extract_price(span.get_text())
+        if price is not None and price > 1:
             return price
 
-    # 2. Qualquer span com classe a-offscreen (Amazon usa muito isso)
+    # 3) Qualquer span com a classe a-offscreen
     span = soup.select_one("span.a-offscreen")
     if span and span.get_text(strip=True):
-        price = extract_price(span.get_text(strip=True))
-        if price is not None:
+        price = extract_price(span.get_text())
+        if price is not None and price > 1:
             return price
 
-    # 3. Extrai qualquer coisa parecida com R$ 1.234,56
+    # 4) Fallback: usa todo o texto da página
     text = soup.get_text(" ", strip=True)
-    match = re.search(r"R\$\s*[\d\.\,]+", text)
-    if match:
-        price = extract_price(match.group(0))
-        if price is not None:
+    price = extract_price(text)
+    if price is not None and price > 1:
+        return price
+
+    return None
+
+
+def get_price_with_retries(url: str, attempts: int = 3, delay: int = 4) -> float | None:
+    """
+    Tenta extrair o preço de uma URL da Amazon com algumas tentativas.
+    Só retorna preço > 1. Se falhar, retorna None.
+    """
+    for i in range(1, attempts + 1):
+        print(f"  [INFO] Tentativa {i} para {url}")
+        html = fetch_html(url)
+        if not html:
+            time.sleep(delay)
+            continue
+
+        price = parse_price_from_html(html)
+        if price is not None and price > 1:
+            print(f"  [OK] Preço encontrado: R$ {price:.2f}")
             return price
 
-    # Nada encontrado
+        print("  [WARN] Preço não encontrado ou inválido, tentando de novo...")
+        time.sleep(delay)
+
+    print("  [ERRO] Não foi possível obter preço válido após várias tentativas.")
     return None
 
 
@@ -123,64 +161,45 @@ def run_scraper():
     conn = get_conn()
     cur = conn.cursor()
 
-    # Lê todos os produtos cadastrados
-    df_products = None
-    try:
-        import pandas as pd
+    # lê todos os produtos cadastrados
+    cur.execute("SELECT id, name, url FROM products")
+    products = cur.fetchall()
 
-        df_products = pd.read_sql_query("SELECT * FROM products", conn)
-    except Exception as e:
-        print(f"[ERRO] Não foi possível ler tabela products: {e}")
+    if not products:
+        print("[INFO] Nenhum produto cadastrado na tabela products.")
         conn.close()
         return
 
-    if df_products.empty:
-        print("[INFO] Nenhum produto cadastrado em products.")
-        conn.close()
-        return
-
-    # Timestamp único da rodada em UTC
+    # timestamp único da rodada, em UTC
     now_utc = datetime.now(timezone.utc).replace(microsecond=0)
-    now_str = now_utc.isoformat()  # será convertido no dashboard
-
+    now_str = now_utc.isoformat()
     print(f"[INFO] Iniciando rodada de scraping em {now_str} (UTC)")
+    print(f"[INFO] Total de produtos: {len(products)}")
+
     sucessos = 0
     falhas = 0
 
-    for _, prod in df_products.iterrows():
-        pid = int(prod["id"])
-        name = prod["name"]
-        url = prod["url"]
+    for pid, name, url in products:
+        print(f"\n[PRODUTO] ID {pid} - {name}")
+        price = get_price_with_retries(url)
 
-        print(f"[INFO] Coletando produto {pid} - {name}")
-
-        html = fetch_html(url)
-        if html is None:
-            price = None
+        if price is None:
             falhas += 1
-            print(f"[WARN] HTML não carregado para {name}. Gravando price=NULL.")
-        else:
-            price = parse_price_from_html(html)
-            if price is None:
-                falhas += 1
-                print(f"[WARN] Não consegui extrair preço de {name}. Gravando price=NULL.")
-            else:
-                sucessos += 1
-                print(f"[OK] Preço extraído para {name}: {price}")
+            print(f"[WARN] Produto '{name}': preço não será registrado nesta rodada.")
+            continue
 
-        # Insere SEMPRE um registro para este produto nesta rodada
+        # insere registro na tabela prices
         cur.execute(
             "INSERT INTO prices (product_id, price, date) VALUES (?, ?, ?)",
             (pid, price, now_str),
         )
         conn.commit()
-
-        # Pequeno delay para não forçar a Amazon demais
-        time.sleep(2)
+        sucessos += 1
+        print(f"[SAVE] Gravado no banco: product_id={pid}, price={price:.2f}, date={now_str}")
 
     conn.close()
     print(
-        f"[INFO] Rodada finalizada. Sucessos: {sucessos} | Falhas: {falhas} | Timestamp: {now_str} (UTC)"
+        f"\n[RESUMO] Rodada finalizada. Sucessos: {sucessos} | Falhas (sem preço): {falhas} | Timestamp: {now_str} (UTC)"
     )
 
 
