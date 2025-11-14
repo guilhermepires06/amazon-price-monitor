@@ -231,7 +231,7 @@ with st.sidebar:
     st.markdown(
         """
         <div class="sidebar-box">
-            <a class="sidebar-link" href="https://github.com/guilhermepires06" target="_blank">
+            <a class="sidebar-link" href="https://github.com/guilhermepires06/amazon-price-monitor" target="_blank">
                 🔗 Repositório no GitHub
             </a>
         </div>
@@ -243,8 +243,8 @@ with st.sidebar:
         """
         <div class="sidebar-box sidebar-dev">
             <div>Sistema desenvolvido por:</div>
-            <div class="dev-name">Guilherme Pires</div>
             <div class="dev-name">Eduardo Feres</div>
+            <div class="dev-name">Guilherme Pires</div>
         </div>
         """,
         unsafe_allow_html=True,
