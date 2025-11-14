@@ -165,14 +165,81 @@ def fetch_html(url: str, timeout: int = 25) -> str | None:
         return None
 
 
+def _parse_price_from_price_block(block) -> float | None:
+    """
+    Dado um 'bloco de preço' (div/span com a estrutura da Amazon),
+    monta o valor usando:
+        - span.a-price-whole (parte inteira, com ponto de milhar)
+        - span.a-price-fraction (centavos)
+    e converte com extract_price.
+
+    Retorna float ou None.
+    """
+    if block is None:
+        return None
+
+    whole_span = block.select_one("span.a-price-whole")
+    if not whole_span:
+        return None
+
+    fraction_span = block.select_one("span.a-price-fraction")
+
+    # Pega apenas dígitos da parte inteira (remove ponto, vírgula e espaços)
+    whole_raw = whole_span.get_text(strip=True)
+    whole_digits = "".join(ch for ch in whole_raw if ch.isdigit())
+
+    if not whole_digits:
+        return None
+
+    if fraction_span:
+        fraction_raw = fraction_span.get_text(strip=True)
+        fraction_digits = "".join(ch for ch in fraction_raw if ch.isdigit())
+        if not fraction_digits:
+            fraction_digits = "00"
+    else:
+        fraction_digits = "00"
+
+    # Monta string estilo BR: R$ 2116,05
+    price_str = f"R$ {whole_digits},{fraction_digits}"
+
+    price = extract_price(price_str)
+    if price is not None and price > 1:
+        return price
+
+    return None
+
+
 def parse_price_from_html(html: str) -> float | None:
     """
     Tenta extrair o preço a partir do HTML usando vários seletores.
-    Versão ORIGINAL que você estava usando, só com comentários.
+
+    Prioridade:
+      1) Blocos principais de preço usando a-price-whole/a-price-fraction.
+      2) Fallbacks antigos (IDs clássicos, .a-offscreen, texto da página).
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    # 1) IDs clássicos da Amazon
+    # 1) Blocos de preço principais (desktop / corePrice)
+    price_containers_selectors = [
+        "#corePriceDisplay_desktop_feature_div",
+        "#corePrice_feature_div",
+        "#price",
+        "div[data-feature-name='corePrice']",
+    ]
+
+    for sel in price_containers_selectors:
+        block = soup.select_one(sel)
+        price = _parse_price_from_price_block(block)
+        if price is not None and price > 1:
+            return price
+
+    # 2) Qualquer .a-price na página (primeiro bloco válido)
+    for block in soup.select("span.a-price, div.a-price"):
+        price = _parse_price_from_price_block(block)
+        if price is not None and price > 1:
+            return price
+
+    # 3) IDs clássicos da Amazon (fallback antigo)
     for span_id in [
         "priceblock_ourprice",
         "priceblock_dealprice",
@@ -185,21 +252,21 @@ def parse_price_from_html(html: str) -> float | None:
             if price is not None and price > 1:
                 return price
 
-    # 2) Estrutura nova: .a-price .a-offscreen
+    # 4) Estrutura nova: .a-price .a-offscreen
     span = soup.select_one(".a-price .a-offscreen")
     if span and span.get_text(strip=True):
         price = extract_price(span.get_text())
         if price is not None and price > 1:
             return price
 
-    # 3) Qualquer span com a classe a-offscreen
+    # 5) Qualquer span com a classe a-offscreen
     span = soup.select_one("span.a-offscreen")
     if span and span.get_text(strip=True):
         price = extract_price(span.get_text())
         if price is not None and price > 1:
             return price
 
-    # 4) Fallback: usa todo o texto da página
+    # 6) Fallback extremo: usa todo o texto da página
     text = soup.get_text(" ", strip=True)
     price = extract_price(text)
     if price is not None and price > 1:
