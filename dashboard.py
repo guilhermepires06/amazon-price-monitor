@@ -168,9 +168,8 @@ st.markdown(
 # =============================================================================
 
 with st.sidebar:
-    st.markdown(
-        """
-        <style>
+    st.markdown("""
+    <style>
         .sidebar-title {
             font-size: 1.3rem;
             font-weight: 700;
@@ -227,38 +226,45 @@ with st.sidebar:
         .dev-name {
             font-weight: 600;
             color: #a5b4fc;
+            margin-top: 4px;
         }
-        </style>
+    </style>
+    """, unsafe_allow_html=True)
 
-        <div class="sidebar-container">
-            <div>
-                <div class="sidebar-title">📦 Produtos Monitorados</div>
-                <div class="sidebar-sub">
-                    Interface somente de leitura<br>Sistema hospedado no GitHub
-                </div>
+    st.markdown("""
+    <div class="sidebar-container">
 
-                <div class="sidebar-box">
-                    <a class="sidebar-link" href="https://github.com/guilhermepires06/amazon-price-monitor" target="_blank">
-                        🔗 Repositório no GitHub
-                    </a>
-                </div>
+        <div>
+            <div class="sidebar-title">📦 Produtos Monitorados</div>
 
-                <div class="sidebar-box sidebar-dev">
-                    <div>Sistema desenvolvido por:</div>
-                    <div class="dev-name">🧠 Eduardo Feres</div>
-                    <div class="dev-name">👨‍💻 Guilherme Pires</div>
-                </div>
+            <div class="sidebar-sub">
+                Interface somente de leitura<br>Sistema hospedado no GitHub
             </div>
 
-            <div class="sidebar-grow"></div>
+            <div class="sidebar-box">
+                <a class="sidebar-link" 
+                   href="https://github.com/guilhermepires06/amazon-price-monitor" 
+                   target="_blank">
+                    🔗 Repositório no GitHub
+                </a>
+            </div>
 
-            <div class="sidebar-footer">
-                © 2025 - Amazon Price Monitor
+            <div class="sidebar-box sidebar-dev">
+                <div>Sistema desenvolvido por:</div>
+                <div class="dev-name">🧠 Eduardo Feres</div>
+                <div class="dev-name">👨‍💻 Guilherme Pires</div>
             </div>
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+
+        <div class="sidebar-grow"></div>
+
+        <div class="sidebar-footer">
+            © 2025 - Amazon Price Monitor
+        </div>
+
+    </div>
+    """, unsafe_allow_html=True)
+
 
 
 # =============================================================================
