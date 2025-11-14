@@ -1,7 +1,7 @@
 import sqlite3
 import json
-import re
-from datetime import datetime
+import tempfile
+from datetime import datetime, timedelta
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -11,9 +11,17 @@ import requests
 import streamlit as st
 from bs4 import BeautifulSoup
 
-from utils import extract_price  # converte texto de preço em float
+from utils import extract_price
 
-DB_NAME = "scraping.db"
+# =============================================================================
+# CONFIG BÁSICA
+# =============================================================================
+
+# URL do banco REMOTO (RAW no GitHub)
+GITHUB_DB_URL = (
+    "https://raw.githubusercontent.com/"
+    "guilhermepires06/amazon-price-monitor/main/scraping.db"
+)
 
 HEADERS = {
     "User-Agent": (
@@ -25,620 +33,314 @@ HEADERS = {
 }
 
 # =============================================================================
-# AJUSTE DE SCHEMA (image_url)
+# BANCO – LENDO scraping.db REMOTO (GITHUB RAW)
 # =============================================================================
 
-
-def ensure_schema():
-    """Garante que a tabela products tenha a coluna image_url."""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("ALTER TABLE products ADD COLUMN image_url TEXT")
-        conn.commit()
-    except sqlite3.OperationalError:
-        # coluna já existe
-        pass
-    conn.close()
-
-
-ensure_schema()
-
-# =============================================================================
-# CACHE – HTML
-# =============================================================================
-
-
-@st.cache_data(show_spinner=False, ttl=600)
-def cached_html(url: str) -> str:
-    resp = requests.get(url, headers=HEADERS, timeout=20)
-    resp.raise_for_status()
-    return resp.text
-
-
-# =============================================================================
-# FUNÇÕES DE BANCO
-# =============================================================================
-
-
+@st.cache_data(show_spinner=False, ttl=60)
 def get_data():
-    conn = sqlite3.connect(DB_NAME)
-    df_products = pd.read_sql_query("SELECT * FROM products", conn)
-    df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
-    conn.close()
+    """
+    Lê o scraping.db remoto (RAW no GitHub).
 
+    • Faz download do arquivo .db remoto (read-only) e lê as tabelas.
+    • Se der erro para baixar/abrir/ler, mostra st.error e retorna DataFrames vazios.
+    • Converte o campo `date` (UTC) para `date_local` (horário de Brasília).
+    """
+    # 1) Baixar o .db remoto
+    try:
+        resp = requests.get(GITHUB_DB_URL, headers=HEADERS, timeout=30)
+        resp.raise_for_status()
+        db_bytes = resp.content
+    except Exception as e:
+        st.error(f"❌ Erro ao baixar o banco remoto em '{GITHUB_DB_URL}': {e}")
+        return pd.DataFrame(), pd.DataFrame()
+
+    # 2) Abrir o .db em um arquivo temporário
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".db") as tmp:
+            tmp.write(db_bytes)
+            tmp.flush()
+
+            conn = sqlite3.connect(tmp.name)
+            try:
+                df_products = pd.read_sql_query("SELECT * FROM products", conn)
+                df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
+            finally:
+                conn.close()
+    except Exception as e:
+        st.error(f"❌ Erro ao ler tabelas do banco remoto: {e}")
+        return pd.DataFrame(), pd.DataFrame()
+
+    # 3) Ajuste de datas
     if "date" in df_prices.columns:
-        df_prices["date"] = pd.to_datetime(df_prices["date"])
+        df_prices["date"] = pd.to_datetime(
+            df_prices["date"], utc=True, errors="coerce"
+        )
+        df_prices = df_prices.dropna(subset=["date"])
         df_prices = df_prices.sort_values("date")
-        df_prices["date_local"] = df_prices["date"] - pd.Timedelta(hours=3)
+
+        try:
+            df_prices["date_local"] = (
+                df_prices["date"]
+                .dt.tz_convert("America/Sao_Paulo")
+                .dt.tz_localize(None)
+            )
+        except Exception:
+            # fallback burro (UTC-3 fixo)
+            df_prices["date_local"] = (
+                df_prices["date"].dt.tz_localize(None) - pd.Timedelta(hours=3)
+            )
     else:
         df_prices["date_local"] = pd.NaT
 
     return df_products, df_prices
 
 
-def add_product_to_db(name: str, url: str):
-    name = name.strip()
-    url = url.strip()
-
-    if not url:
-        return False, "Informe uma URL válida."
-
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT id FROM products WHERE url = ?", (url,))
-    if cursor.fetchone():
-        conn.close()
-        return False, "Este produto já está cadastrado."
-
-    image_url = get_product_image(url)
-
-    cursor.execute(
-        "INSERT INTO products (name, url, image_url) VALUES (?, ?, ?)",
-        (name, url, image_url),
-    )
-    conn.commit()
-    conn.close()
-    return True, "Produto cadastrado com sucesso!"
-
-
-def update_product_image(product_id: int, image_url: str | None):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE products SET image_url = ? WHERE id = ?",
-        (image_url, product_id),
-    )
-    conn.commit()
-    conn.close()
-
-
-def delete_product_from_db(product_id: int):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM prices WHERE product_id = ?", (product_id,))
-    cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
-    conn.commit()
-    conn.close()
-
-
-def get_latest_price(df_prices: pd.DataFrame, product_id: int):
-    df_prod = df_prices[df_prices["product_id"] == product_id]
-    df_prod = df_prod.dropna(subset=["price"])
-    if df_prod.empty:
-        return None
-    return df_prod["price"].iloc[-1]
-
-
 # =============================================================================
-# FUNÇÕES DE SCRAPING
+# SCRAPING IMAGEM (SOMENTE PARA O THUMB DA PÁGINA)
 # =============================================================================
 
-
-def get_product_image(url: str) -> str | None:
-    """Tenta achar a imagem principal da Amazon."""
+@st.cache_data(show_spinner=False, ttl=60 * 60)
+def get_product_image(url: str):
     try:
-        html = cached_html(url)
+        html = requests.get(url, headers=HEADERS, timeout=20).text
     except Exception:
         return None
 
     soup = BeautifulSoup(html, "html.parser")
 
-    # 1) landingImage
     img = soup.find("img", {"id": "landingImage"})
     if img and img.get("src"):
         return img["src"]
 
-    # 2) data-old-hires
     img = soup.find("img", attrs={"data-old-hires": True})
     if img and img.get("data-old-hires"):
         return img["data-old-hires"]
 
-    # 3) data-a-dynamic-image
     img = soup.find("img", attrs={"data-a-dynamic-image": True})
-    if img and img.get("data-a-dynamic-image"):
+    if img:
         try:
             dyn = json.loads(img["data-a-dynamic-image"])
-            urls = list(dyn.keys())
-            for u in urls:
-                if "images/I/" in u or "m.media-amazon.com" in u:
-                    return u
-            if urls:
-                return urls[0]
+            return list(dyn.keys())[0]
         except Exception:
             pass
 
-    # 4) meta og:image
     meta = soup.find("meta", {"property": "og:image"})
-    if meta and meta.get("content"):
-        return meta["content"]
-
-    # 5) qualquer img com /images/I/
-    any_img = soup.find("img", src=lambda x: x and "images/I/" in x)
-    if any_img and any_img.get("src"):
-        return any_img["src"]
-
-    # 6) script com "hiRes"
-    for script in soup.find_all("script"):
-        if script.string and "hiRes" in script.string:
-            m = re.search(r'"hiRes":"(.*?)"', script.string)
-            if m:
-                return m.group(1).replace("\\/", "/")
+    if meta:
+        return meta.get("content")
 
     return None
-
-
-def fetch_product_title(url: str) -> str | None:
-    try:
-        html = cached_html(url)
-    except Exception:
-        return None
-
-    soup = BeautifulSoup(html, "html.parser")
-    title_tag = soup.find(id="productTitle")
-    if title_tag:
-        return title_tag.get_text(strip=True)
-    return None
-
-
-def scrape_single_product(product_id: int, url: str):
-    """Coleta o preço de UM produto e grava na tabela prices."""
-    try:
-        html = cached_html(url)
-    except Exception:
-        return
-
-    soup = BeautifulSoup(html, "html.parser")
-
-    price_whole = soup.find("span", class_="a-price-whole")
-    price_fraction = soup.find("span", class_="a-price-fraction")
-    if price_whole and price_fraction:
-        full_price_str = f"{price_whole.text.strip()},{price_fraction.text.strip()}"
-    elif price_whole:
-        full_price_str = price_whole.text.strip()
-    else:
-        full_price_str = None
-
-    price = extract_price(full_price_str)
-
-    old_price_tag = soup.find("span", class_="a-text-price")
-    old_price_str = old_price_tag.get_text(strip=True) if old_price_tag else None
-    old_price = extract_price(old_price_str)
-
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        INSERT INTO prices (product_id, price, old_price)
-        VALUES (?, ?, ?)
-        """,
-        (product_id, price, old_price),
-    )
-    conn.commit()
-    conn.close()
 
 
 # =============================================================================
-# CONFIG STREAMLIT + CSS
+# UI / CSS
 # =============================================================================
 
 st.set_page_config(
-    page_title="Monitor de Preços Amazon",
+    page_title="Monitor de Preços Amazon (v2)",
     layout="wide",
     page_icon="💹",
 )
 
 st.markdown(
     """
-    <style>
-    .main {
-        background: radial-gradient(circle at top left, #111827, #020617);
-        color: #e5e7eb;
-    }
-    [data-testid="stSidebar"] {
-        background-color: #020617;
-        color: #e5e7eb;
-        border-right: 1px solid #1f2933;
-    }
-    h1, h2, h3, h4, h5, h6 {
-        color: #e5e7eb !important;
-    }
+<style>
 
-    /* FLAG usada para identificar o container do card */
-    .product-card-flag {
-        display: none;
-    }
+/* SIDEBAR FIXA */
+[data-testid="stSidebar"] {
+    position: fixed !important;
+    top:0;
+    left:0;
+    height: 100vh !important;
+    z-index: 999;
+    overflow-y: auto !important;
+}
 
-    /* O PAI que contém a flag vira o CARD */
-    div:has(> .product-card-flag) {
-        background: #020617;
-        border-radius: 0.8rem;
-        border: 1px solid rgba(148,163,184,0.4);
-        box-shadow: 0 10px 25px rgba(15,23,42,0.75);
-        padding: 0.9rem 0.9rem 0.8rem 0.9rem;
-        margin-bottom: 1.5rem;
-        min-height: 360px; /* força altura parecida entre todos */
-    }
+/* Conteúdo principal deslocado */
+[data-testid="stAppViewContainer"] {
+    padding-left: 18rem !important;
+}
 
-    .product-title {
-        font-size: 0.90rem;
-        font-weight: 600;
-        color: #e5e7eb;
-        margin-bottom: 0.5rem;
-        min-height: 2.6em;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-    }
+[data-testid="stHeader"] {
+    margin-left: 18rem !important;
+}
 
-    .product-price {
-        font-size: 1.05rem;
-        font-weight: 700;
-        margin-top: 0.2rem;
-        color: #a5b4fc;
-        margin-bottom: 0.4rem;
-    }
+/* Card */
+.detail-card {
+    padding: 1rem;
+    border-radius: 0.9rem;
+    background: #020617;
+    border: 1px solid rgba(148,163,184,0.5);
+    margin-bottom: 1.25rem;
+    box-shadow: 0 12px 30px rgba(15,23,42,0.7);
+}
 
-    .detail-card {
-        padding: 1.25rem;
-        border-radius: 1rem;
-        background: #020617;
-        border: 1px solid rgba(148,163,184,0.5);
-        margin-top: 0.5rem;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 18px 45px rgba(15,23,42,0.9);
-    }
+/* Badges */
+.metric-badge {
+    display:inline-block;
+    padding:0.2rem 0.6rem;
+    border-radius:999px;
+    background:#0f172a;
+    font-size:0.7rem;
+    margin-right:0.3rem;
+    color:#e5e7eb;
+    border:1px solid rgba(148,163,184,0.6);
+}
+.metric-badge.neutral  { border-color:#64748b; }
 
-    .metric-badge {
-        display: inline-block;
-        padding: 0.25rem 0.7rem;
-        border-radius: 999px;
-        background: #0f172a;
-        font-size: 0.75rem;
-        margin-right: 0.3rem;
-        color: #e5e7eb;
-    }
-    .metric-badge.positive { border: 1px solid #22c55e; }
-    .metric-badge.negative { border: 1px solid #ef4444; }
-    .metric-badge.neutral  { border: 1px solid #64748b; }
+.last-update-pill {
+    padding:0.35rem 0.9rem;
+    border-radius:999px;
+    border:1px solid rgba(148,163,184,0.6);
+    background:#020617;
+    font-size:0.75rem;
+    display:flex;
+    gap:0.35rem;
+    align-items:center;
+}
 
-    a { color: #38bdf8 !important; }
+/* Versão do dashboard */
+.version-chip {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    border: 1px solid #64748b;
+    margin-left: 0.5rem;
+    color: #cbd5e1;
+}
 
-    .last-update-pill {
-        padding: 0.35rem 0.9rem;
-        border-radius: 999px;
-        border: 1px solid rgba(148,163,184,0.6);
-        background: #020617;
-        font-size: 0.75rem;
-        display: inline-flex;
-        gap: 0.35rem;
-        align-items: center;
-    }
-    </style>
-    """,
+</style>
+""",
     unsafe_allow_html=True,
 )
 
+
 # =============================================================================
-# SIDEBAR – CADASTRO
+# SIDEBAR
 # =============================================================================
 
 with st.sidebar:
-    st.markdown("## ➕ Adicionar produto da Amazon")
-    st.write(
-        "Cole a URL de um produto da Amazon e, se quiser, personalize o nome. "
-        "O sistema tentará buscar automaticamente o título e a imagem."
+    st.markdown("### 📦 Produtos monitorados")
+    st.markdown(
+        "Dados carregados de um **banco remoto** (`scraping.db`) "
+        "hospedado em **GitHub RAW**."
     )
-
-    new_url = st.text_input("URL do produto na Amazon")
-    new_name = st.text_input("Nome do produto (opcional)")
-
-    if st.button("Adicionar produto"):
-        if not new_url.strip():
-            st.error("Informe a URL do produto.")
-        else:
-            name_to_use = new_name.strip()
-            if not name_to_use:
-                st.info("Buscando título automaticamente na Amazon...")
-                auto_title = fetch_product_title(new_url)
-                name_to_use = auto_title or "Produto Amazon"
-
-            ok, msg = add_product_to_db(name_to_use, new_url)
-            if ok:
-                st.success(msg)
-                conn = sqlite3.connect(DB_NAME)
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT id FROM products WHERE url = ?",
-                    (new_url.strip(),),
-                )
-                row = cursor.fetchone()
-                conn.close()
-                if row:
-                    product_id = row[0]
-                    scrape_single_product(product_id, new_url.strip())
-                    st.session_state["selected_product_id"] = product_id
-                st.rerun()
-            else:
-                st.warning(msg)
-
+    st.markdown("GitHub Actions atualiza esse arquivo periodicamente.")
+    st.markdown(
+        "[🔗 Repositório no GitHub]"
+        "(https://github.com/guilhermepires06/amazon-price-monitor)"
+    )
     st.markdown("---")
-    st.caption(
-        "Este painel lê o banco **`scraping.db`**, "
-        "atualizado automaticamente pelo GitHub Actions."
-    )
+    st.markdown("**Sistema desenvolvido por:**")
+    st.markdown("🧠 Eduardo Feres")
+    st.markdown("👨‍💻 Guilherme Pires")
+    st.markdown("---")
+    st.markdown("📌 *Dashboard somente leitura (não altera o banco remoto).*")
+    st.markdown("© 2025 - Amazon Price Monitor")
+
 
 # =============================================================================
 # CONTEÚDO PRINCIPAL
 # =============================================================================
 
-df_products, df_prices = get_data()
+title_col, ver_col, btn_col = st.columns([3, 1, 1])
 
-st.title("💹 Monitor de Preços")
+with title_col:
+    st.title("💹 Monitor de Preços Amazon")
 
-# Última atualização
-if not df_prices.empty and "date_local" in df_prices.columns:
-    last_dt = df_prices["date_local"].max()
-    last_str = last_dt.strftime("%d/%m %H:%M") if pd.notna(last_dt) else "--/-- --:--"
-else:
-    last_str = "--/-- --:--"
-
-col_title, col_last = st.columns([4, 1])
-with col_last:
+with ver_col:
     st.markdown(
-        f"""
-        <div class="last-update-pill">
-            <span>🕒 Última atualização:</span>
-            <strong>{last_str}</strong>
-        </div>
-        """,
+        '<div class="version-chip">v2 • dashboard.py (DB remoto)</div>',
         unsafe_allow_html=True,
     )
 
-if df_products.empty:
-    st.warning("Nenhum produto cadastrado. Adicione um produto na barra lateral.")
+with btn_col:
+    if st.button("🔄 Atualizar cache", use_container_width=True):
+        get_data.clear()
+        st.rerun()
+
+df_products, df_prices = get_data()
+
+if df_products.empty or df_prices.empty:
+    st.warning(
+        "Não foi possível carregar dados do banco remoto neste momento. "
+        "Verifique se o `scraping.db` remoto possui dados em `products` e `prices`."
+    )
     st.stop()
 
-sns.set_style("whitegrid")
+if df_prices["date_local"].notna().any():
+    global_last = df_prices["date_local"].max()
+    global_last_str = global_last.strftime("%d/%m %H:%M")
+else:
+    global_last_str = "--/-- --:--"
 
-# ----------------------------------------------------------------------------- #
-# BLOCO DE DETALHES (PAINEL FIXO)
-# ----------------------------------------------------------------------------- #
-
-selected_id = st.session_state.get("selected_product_id")
-
-if selected_id is not None and selected_id in df_products["id"].values:
-    product = df_products[df_products["id"] == selected_id].iloc[0]
-    df_prod = df_prices[df_prices["product_id"] == selected_id].copy()
-
-    st.markdown("## Detalhes do produto selecionado")
-    with st.container():
-        st.markdown('<div class="detail-card">', unsafe_allow_html=True)
-
-        top_cols = st.columns([6, 1])
-        with top_cols[0]:
-            st.markdown(f"### {product['name']}")
-        with top_cols[1]:
-            if st.button("Fechar detalhes"):
-                st.session_state["selected_product_id"] = None
-                st.rerun()
-
-        col_img, col_graph = st.columns([1, 2])
-
-        with col_img:
-            st.write("**Produto**")
-            img_url = product.get("image_url") or get_product_image(product["url"])
-            if img_url:
-                st.image(img_url, width=260)
-            else:
-                st.info("Sem imagem disponível.")
-            st.markdown(f"[Ver na Amazon]({product['url']})")
-
-            st.markdown("#### Ajustar imagem manualmente")
-            manual_img = st.text_input(
-                "URL direta da imagem:",
-                value=product.get("image_url") or "",
-                key=f"manual_img_{product['id']}",
-            )
-
-            save_col, del_col = st.columns(2)
-            with save_col:
-                if st.button("Salvar imagem", key=f"save_img_{product['id']}"):
-                    if manual_img.strip():
-                        update_product_image(product["id"], manual_img.strip())
-                        st.success("Imagem atualizada com sucesso.")
-                    else:
-                        update_product_image(product["id"], None)
-                        st.info("Imagem removida.")
-                    st.rerun()
-            with del_col:
-                if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
-                    delete_product_from_db(product["id"])
-                    st.success("Produto removido.")
-                    st.session_state["selected_product_id"] = None
-                    st.rerun()
-
-        with col_graph:
-            st.write("**Histórico de Preços**")
-
-            if df_prod.empty:
-                st.info("Sem histórico de preços para este produto ainda.")
-            else:
-                fig, ax = plt.subplots(figsize=(8, 3))
-                sns.lineplot(data=df_prod, x="date_local", y="price", marker="o", ax=ax)
-                ax.set_xlabel("Data/Hora (BR)")
-                ax.set_ylabel("Preço (R$)")
-                ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
-                plt.xticks(rotation=30)
-                st.pyplot(fig)
-
-                st.markdown("### 📌 Insights")
-                df_prod_valid = df_prod.dropna(subset=["price"])
-                if len(df_prod_valid) >= 2:
-                    first_price = df_prod_valid["price"].iloc[0]
-                    last_price = df_prod_valid["price"].iloc[-1]
-                    max_price = df_prod_valid["price"].max()
-                    min_price = df_prod_valid["price"].min()
-                    mean_price = df_prod_valid["price"].mean()
-
-                    diff_abs = last_price - first_price
-                    diff_percent = (diff_abs / first_price) * 100 if first_price != 0 else 0
-
-                    if diff_abs > 0:
-                        tendencia = "subiu"
-                        badge_class = "positive"
-                    elif diff_abs < 0:
-                        tendencia = "caiu"
-                        badge_class = "negative"
-                    else:
-                        tendencia = "se manteve estável"
-                        badge_class = "neutral"
-
-                    st.markdown(
-                        f"""
-                        <span class="metric-badge {badge_class}">
-                            Tendência: {tendencia}
-                        </span>
-                        <span class="metric-badge">
-                            Atual: R$ {last_price:.2f}
-                        </span>
-                        <span class="metric-badge">
-                            Mín: R$ {min_price:.2f}
-                        </span>
-                        <span class="metric-badge">
-                            Máx: R$ {max_price:.2f}
-                        </span>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-
-                    st.write(
-                        f"**1. Tendência geral:** o preço {tendencia} de "
-                        f"R$ {first_price:.2f} para R$ {last_price:.2f} "
-                        f"({diff_abs:+.2f} R$, {diff_percent:+.1f}%)."
-                    )
-                    st.write(
-                        f"**2. Faixa de variação:** mínimo registrado R$ {min_price:.2f}, "
-                        f"máximo R$ {max_price:.2f} e preço médio de R$ {mean_price:.2f}."
-                    )
-                    if last_price == min_price:
-                        st.write(
-                            "**3. Momento de compra:** o preço atual é o mais baixo do histórico — "
-                            "excelente momento para considerar a compra."
-                        )
-                    elif last_price == max_price:
-                        st.write(
-                            "**3. Momento de compra:** o preço atual está no topo histórico — "
-                            "pode valer a pena aguardar uma queda."
-                        )
-                    else:
-                        st.write(
-                            "**3. Momento de compra:** o preço atual está dentro da faixa histórica, "
-                            "sem ser o mínimo nem o máximo."
-                        )
-                else:
-                    st.write(
-                        "Ainda não há pontos suficientes no histórico para gerar análises detalhadas. "
-                        "Deixe o coletor rodando por mais tempo."
-                    )
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-# ----------------------------------------------------------------------------- #
-# GRID DE CARDS – PRODUTOS MONITORADOS
-# ----------------------------------------------------------------------------- #
+st.markdown(
+    f"""<div class="last-update-pill">
+        🕒 Última data registrada no banco remoto: <strong>{global_last_str}</strong>
+    </div>""",
+    unsafe_allow_html=True,
+)
 
 st.markdown("## Produtos monitorados")
 
-cols = st.columns(3, gap="large")
+sns.set_style("whitegrid")
 
-for idx, (_, product) in enumerate(df_products.iterrows()):
-    col = cols[idx % 3]
+# =============================================================================
+# LOOP DOS PRODUTOS
+# =============================================================================
 
-    with col:
-        # Container lógico do Streamlit
-        with st.container():
-            # FLAG para o CSS identificar este bloco como card
-            st.markdown('<div class="product-card-flag"></div>', unsafe_allow_html=True)
+for _, product in df_products.iterrows():
+    df_prod = df_prices[df_prices["product_id"] == product["id"]].copy()
 
-            # TÍTULO
+    if not df_prod.empty and df_prod["date_local"].notna().any():
+        last_row = df_prod.sort_values("date_local").iloc[-1]
+        last_dt = last_row["date_local"]
+        last_price = last_row["price"]
+        last_dt_str = last_dt.strftime("%d/%m %H:%M")
+    else:
+        last_dt_str = "--/-- --:--"
+        last_price = None
+
+    st.markdown('<div class="detail-card">', unsafe_allow_html=True)
+    st.markdown(f"### {product['name']}")
+
+    col_img, col_graph = st.columns([1, 1.8])
+
+    # IMAGEM
+    with col_img:
+        img_url = product.get("image_url") or get_product_image(product["url"])
+        if img_url:
+            st.image(img_url, width=220)
+        st.markdown(f"[Ver na Amazon]({product['url']})")
+
+    # GRÁFICO + INFO
+    with col_graph:
+        if df_prod.empty:
+            st.info("Sem histórico deste produto.")
+        else:
+            fig, ax = plt.subplots(figsize=(6, 2.5))
+            sns.lineplot(df_prod, x="date_local", y="price", marker="o", ax=ax)
+            ax.set_xlabel("Data/Hora (BR)")
+            ax.set_ylabel("Preço (R$)")
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
+            plt.xticks(rotation=25)
+            st.pyplot(fig)
+
+            if last_price is not None and pd.notna(last_price):
+                last_price_str = f"R$ {last_price:.2f}"
+            else:
+                last_price_str = "sem valor (NULL / None)"
+
             st.markdown(
-                f'<div class="product-title">{product["name"]}</div>',
+                f'<span class="metric-badge neutral">'
+                f'Últ. registro no banco: {last_dt_str} — {last_price_str}'
+                f'</span>',
                 unsafe_allow_html=True,
             )
 
-            # IMAGEM
-            img_url = product.get("image_url")
-            if not img_url:
-                img_url = get_product_image(product["url"])
-
-            if img_url:
-                st.image(img_url, width=230)
-            else:
-                st.markdown(
-                    """
-                    <div style="
-                        width: 230px;
-                        height: 180px;
-                        background: #111827;
-                        border-radius: 8px;
-                        border: 1px solid #334155;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: 0.8rem;
-                        color: #64748b;
-                        margin: 0 auto 0.4rem auto;">
-                        Imagem indisponível
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
+            with st.expander("Ver últimos registros brutos desse produto"):
+                st.write(
+                    df_prod.sort_values("date_local", ascending=False)
+                    .head(10)[["date_local", "price"]]
                 )
 
-            # PREÇO
-            latest_price = get_latest_price(df_prices, product["id"])
-            if latest_price is not None:
-                st.markdown(
-                    f'<div class="product-price">R$ {latest_price:.2f}</div>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    '<div class="product-price">Sem preço ainda</div>',
-                    unsafe_allow_html=True,
-                )
-
-            # BOTÕES
-            b1, b2 = st.columns(2)
-            with b1:
-                if st.button("Ver detalhes", key=f"view_{product['id']}"):
-                    st.session_state["selected_product_id"] = product["id"]
-                    st.rerun()
-            with b2:
-                if st.button("🗑 Excluir", key=f"del_{product['id']}"):
-                    delete_product_from_db(product["id"])
-                    if st.session_state.get("selected_product_id") == product["id"]:
-                        st.session_state["selected_product_id"] = None
-                    st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
