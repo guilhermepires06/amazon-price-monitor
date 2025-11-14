@@ -81,6 +81,10 @@ def get_data():
     else:
         df_prices["date_local"] = pd.NaT
 
+    # >>> NOVO: trata preço 0 ou negativo como sem preço <<<
+    if "price" in df_prices.columns:
+        df_prices.loc[df_prices["price"] <= 0, "price"] = float("nan")
+
     return df_products, df_prices
 
 
@@ -274,7 +278,7 @@ for _, product in df_products.iterrows():
 
     df_prod = df_prices[df_prices["product_id"] == product["id"]].copy()
 
-    # últimos registros
+    # últimos registros com preço válido (>0, já tratado em get_data)
     df_valid_all = df_prod.dropna(subset=["price"])
     if not df_valid_all.empty:
         last_valid_dt = df_valid_all["date_local"].max()
@@ -283,7 +287,7 @@ for _, product in df_products.iterrows():
         last_valid_dt = None
         last_valid_str = "--:--"
 
-    # última tentativa (pode ter price = NULL)
+    # última tentativa (pode não ter preço)
     last_attempt_dt = df_prod["date_local"].max() if not df_prod.empty else None
     last_attempt_str = last_attempt_dt.strftime("%d/%m %H:%M") if last_attempt_dt is not None else "--:--"
 
@@ -339,7 +343,7 @@ for _, product in df_products.iterrows():
                         "Última coleta não retornou preço — o gráfico usa o valor anterior."
                     )
 
-            # -------- INSIGHTS (USANDO df_clean, SEM OUTLIERS) --------
+            # -------- INSIGHTS (USANDO df_clean, SEM OUTLIERS E SEM 0) --------
             if len(df_clean) >= 2:
                 df_clean = df_clean.sort_values("date_local")
                 first = df_clean["price"].iloc[0]
@@ -362,6 +366,6 @@ for _, product in df_products.iterrows():
                 elif last == max_p:
                     st.warning("Preço está no máximo histórico.")
             else:
-                st.write("Dados insuficientes para análises (após remover outliers).")
+                st.write("Dados insuficientes para análises (após remover outliers / zeros).")
 
     st.markdown("</div>", unsafe_allow_html=True)
