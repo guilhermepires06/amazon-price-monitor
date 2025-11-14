@@ -45,24 +45,39 @@ def get_data():
     grava em arquivo temporário e lê com sqlite.
     Interpreta o campo `date` como UTC e converte para horário de Brasília.
     NÃO altera os valores de price (mostra o que está no banco).
+    Se houver erro HTTP/rede, retorna DataFrames vazios e não derruba o app.
     """
-    resp = requests.get(GITHUB_DB_URL, headers=HEADERS, timeout=30)
-    resp.raise_for_status()
+    try:
+        resp = requests.get(GITHUB_DB_URL, headers=HEADERS, timeout=30)
+    except requests.RequestException as e:
+        st.error(f"❌ Erro ao baixar o banco do GitHub: {e}")
+        # dataframes vazios para o app continuar rodando
+        return pd.DataFrame(), pd.DataFrame()
+
+    if resp.status_code != 200:
+        st.error(
+            f"❌ Falha ao baixar scraping.db do GitHub. "
+            f"Status HTTP: {resp.status_code}"
+        )
+        return pd.DataFrame(), pd.DataFrame()
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp:
         tmp.write(resp.content)
         tmp_path = tmp.name
 
-    conn = sqlite3.connect(tmp_path)
-    df_products = pd.read_sql_query("SELECT * FROM products", conn)
-    df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
-    conn.close()
-
-    # limpa o arquivo temporário
     try:
-        os.remove(tmp_path)
-    except OSError:
-        pass
+        conn = sqlite3.connect(tmp_path)
+        df_products = pd.read_sql_query("SELECT * FROM products", conn)
+        df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
+        conn.close()
+    except Exception as e:
+        st.error(f"❌ Erro ao ler o arquivo de banco de dados: {e}")
+        return pd.DataFrame(), pd.DataFrame()
+    finally:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
 
     # Ajuste de datas
     if "date" in df_prices.columns:
@@ -246,7 +261,12 @@ with btn_col:
 # Carrega dados (do cache ou frescos, se acabou de clicar no botão)
 df_products, df_prices = get_data()
 
-if not df_prices.empty and df_prices["date_local"].notna().any():
+# Se falhou para baixar o banco, df_products/df_prices estarão vazios
+if df_products.empty or df_prices.empty:
+    st.warning("Não foi possível carregar dados do banco remoto no momento.")
+    st.stop()
+
+if df_prices["date_local"].notna().any():
     global_last = df_prices["date_local"].max()
     global_last_str = global_last.strftime("%d/%m %H:%M")
 else:
