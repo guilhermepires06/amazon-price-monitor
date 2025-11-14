@@ -20,7 +20,7 @@ from utils import extract_price
 DB_NAME = "scraping.db"
 
 # URL RAW do banco no GitHub (ATUALMENTE NÃO ESTÁ SENDO USADA)
-GITHUB_DB_URL = "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"
+# GITHUB_DB_URL = "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"
 
 HEADERS = {
     "User-Agent": (
@@ -254,19 +254,20 @@ st.markdown(
     }
 
     .detail-card {
-        padding: 1.25rem;
-        border-radius: 1rem;
+        padding: 1rem;
+        border-radius: 0.9rem;
         background: #020617;
         border: 1px solid rgba(148,163,184,0.5);
-        box-shadow: 0 18px 45px rgba(15,23,42,0.9);
+        box-shadow: 0 12px 30px rgba(15,23,42,0.7);
+        margin-bottom: 1.25rem;
     }
 
     .metric-badge {
         display: inline-block;
-        padding: 0.25rem 0.7rem;
+        padding: 0.2rem 0.6rem;
         border-radius: 999px;
         background: #0f172a;
-        font-size: 0.75rem;
+        font-size: 0.7rem;
         margin-right: 0.3rem;
         color: #e5e7eb;
     }
@@ -304,8 +305,7 @@ with st.sidebar:
     )
     st.markdown("---")
     st.caption(
-        "Este painel lê diretamente o banco local **`scraping.db`**.\n"
-        "Adições/remoções de produtos devem ser feitas fora da interface."
+       
     )
 
 # =============================================================================
@@ -328,7 +328,7 @@ with col_last:
     st.markdown(
         f"""
         <div class="last-update-pill">
-            <span>🕒 Última atualização:</span>
+            <span>Última atualização:</span>
             <strong>{last_str}</strong>
         </div>
         """,
@@ -341,38 +341,28 @@ if df_products.empty:
 
 sns.set_style("whitegrid")
 
-# ----------------------------------------------------------------------------- #
-# DEFINIR PRODUTO SELECIONADO (GRÁFICO FIXO NA TELA)
-# ----------------------------------------------------------------------------- #
-
-if "selected_product_id" not in st.session_state:
-    # seleciona o primeiro produto por padrão
-    st.session_state["selected_product_id"] = int(df_products["id"].iloc[0])
-
-selected_id = st.session_state["selected_product_id"]
+st.markdown("## Produtos monitorados")
 
 # ----------------------------------------------------------------------------- #
-# BLOCO DE DETALHES (GRÁFICO SEM BOTÃO DE FECHAR)
+# PARA CADA PRODUTO: CARD + GRÁFICO MENOR + INSIGHTS
 # ----------------------------------------------------------------------------- #
 
-if selected_id is not None and selected_id in df_products["id"].values:
-    product = df_products[df_products["id"] == selected_id].iloc[0]
-    df_prod = df_prices[df_prices["product_id"] == selected_id].copy()
+for _, product in df_products.iterrows():
+    df_prod = df_prices[df_prices["product_id"] == product["id"]].copy()
 
-    st.markdown("## Detalhes do produto selecionado")
     with st.container():
         st.markdown('<div class="detail-card">', unsafe_allow_html=True)
 
-        # título simples, sem botão de fechar
         st.markdown(f"### {product['name']}")
 
-        col_img, col_graph = st.columns([1, 2])
+        # colunas mais compactas
+        col_img, col_graph = st.columns([1, 1.8])
 
         with col_img:
             st.write("**Produto**")
             img_url = product.get("image_url") or get_product_image(product["url"])
             if img_url:
-                st.image(img_url, width=260)
+                st.image(img_url, width=220)   # imagem um pouco menor
             else:
                 st.info("Sem imagem disponível.")
             st.markdown(f"[Ver na Amazon]({product['url']})")
@@ -399,7 +389,8 @@ if selected_id is not None and selected_id in df_products["id"].values:
             if df_prod.empty:
                 st.info("Sem histórico de preços para este produto ainda.")
             else:
-                fig, ax = plt.subplots(figsize=(8, 3))
+                # gráfico menor
+                fig, ax = plt.subplots(figsize=(6, 2.5))
                 sns.lineplot(data=df_prod, x="date_local", y="price", marker="o", ax=ax)
                 ax.set_xlabel("Data/Hora (BR)")
                 ax.set_ylabel("Preço (R$)")
@@ -476,66 +467,3 @@ if selected_id is not None and selected_id in df_products["id"].values:
                     )
 
         st.markdown("</div>", unsafe_allow_html=True)
-
-# ----------------------------------------------------------------------------- #
-# GRID DE CARDS – PRODUTOS MONITORADOS (SEM EXCLUIR)
-# ----------------------------------------------------------------------------- #
-
-st.markdown("## Produtos monitorados")
-
-cols = st.columns(3, gap="large")
-
-for idx, (_, product) in enumerate(df_products.iterrows()):
-    col = cols[idx % 3]
-
-    with col:
-        with st.container(border=True):
-            st.markdown(
-                f'<div class="card-title">{product["name"]}</div>',
-                unsafe_allow_html=True,
-            )
-
-            img_url = product.get("image_url")
-            if not img_url:
-                img_url = get_product_image(product["url"])
-
-            st.markdown('<div class="card-img-box">', unsafe_allow_html=True)
-            if img_url:
-                st.image(img_url, width=150)
-            else:
-                st.markdown(
-                    """
-                    <div style="
-                        width: 150px;
-                        height: 120px;
-                        background: #111827;
-                        border-radius: 8px;
-                        border: 1px solid #334155;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        font-size: 0.75rem;
-                        color: #64748b;">
-                        Sem imagem
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-            st.markdown("</div>", unsafe_allow_html=True)
-
-            latest_price = get_latest_price(df_prices, product["id"])
-            if latest_price is not None:
-                st.markdown(
-                    f'<div class="card-price">R$ {latest_price:.2f}</div>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    '<div class="card-price">Sem preço ainda</div>',
-                    unsafe_allow_html=True,
-                )
-
-            # apenas botão de ver detalhes, sem excluir
-            if st.button("Ver detalhes", key=f"view_{product['id']}"):
-                st.session_state["selected_product_id"] = product["id"]
-                st.rerun()
