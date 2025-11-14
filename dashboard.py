@@ -1,5 +1,7 @@
 import sqlite3
 import json
+import os
+import tempfile
 from datetime import datetime
 
 import matplotlib.pyplot as plt
@@ -16,7 +18,10 @@ from utils import extract_price
 # CONFIG BÁSICA
 # =============================================================================
 
-DB_NAME = "scraping.db"
+DB_NAME = "scraping.db"  # ainda existe local, mas o dashboard vai usar o do GitHub
+GITHUB_DB_URL = (
+    "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"
+)
 
 HEADERS = {
     "User-Agent": (
@@ -28,10 +33,14 @@ HEADERS = {
 }
 
 # =============================================================================
-# SCHEMA
+# SCHEMA (LOCAL – opcional, usado se você rodar algo que grava no disco)
 # =============================================================================
 
 def ensure_schema():
+    """
+    Garante que, se você usar o banco local DB_NAME, ele tenha a coluna image_url.
+    O dashboard, porém, está lendo do banco do GitHub (somente leitura).
+    """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     try:
@@ -54,15 +63,37 @@ def cached_html(url: str) -> str:
     return resp.text
 
 # =============================================================================
-# BANCO
+# BANCO – LENDO DIRETO DO GITHUB (PADRÃO ÚNICO PARA TODOS OS GRÁFICOS)
 # =============================================================================
 
+@st.cache_data(show_spinner=False, ttl=300)
 def get_data():
-    conn = sqlite3.connect(DB_NAME)
-    df_products = pd.read_sql_query("SELECT * FROM products", conn)
-    df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
-    conn.close()
+    """
+    Baixa o scraping.db direto do GitHub (RAW), grava em um arquivo temporário
+    e lê as tabelas products e prices. Cache de 5 minutos.
+    """
+    resp = requests.get(GITHUB_DB_URL, headers=HEADERS, timeout=30)
+    resp.raise_for_status()
+    db_bytes = resp.content
 
+    # Salva em arquivo temporário para o sqlite conseguir abrir
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp:
+        tmp.write(db_bytes)
+        tmp_path = tmp.name
+
+    try:
+        conn = sqlite3.connect(tmp_path)
+        df_products = pd.read_sql_query("SELECT * FROM products", conn)
+        df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
+        conn.close()
+    finally:
+        # remove o temporário
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+    # Ajuste de datas
     if "date" in df_prices.columns:
         df_prices["date"] = pd.to_datetime(df_prices["date"])
         df_prices = df_prices.sort_values("date")
@@ -97,7 +128,7 @@ def get_product_image(url: str) -> str | None:
         try:
             imgs = json.loads(img["data-a-dynamic-image"])
             return list(imgs.keys())[0]
-        except:
+        except Exception:
             pass
 
     img = soup.find("meta", {"property": "og:image"})
@@ -116,7 +147,8 @@ st.set_page_config(
     page_icon="💹",
 )
 
-st.markdown("""
+st.markdown(
+    """
 <style>
 
 /* SIDEBAR FIXA */
@@ -138,8 +170,6 @@ st.markdown("""
 [data-testid="stHeader"] {
     margin-left: 18rem !important;
 }
-
-
 
 /* Estilo dos cards */
 .detail-card {
@@ -177,7 +207,9 @@ st.markdown("""
 }
 
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # =============================================================================
 # SIDEBAR
@@ -192,8 +224,8 @@ with st.sidebar:
     st.markdown("🧠 Eduardo Feres")
     st.markdown("👨‍💻 Guilherme Pires")
     st.markdown("---")
-    st.markdown("Banco de dados atualzia de 5 em 5 minutos")
-    st.markdown("Graficos de 2 em 2 horas")
+    st.markdown("Banco de dados atualiza de 5 em 5 minutos")
+    st.markdown("Gráficos atualizam conforme o banco (cache de 5 minutos)")
     st.markdown("---")
     st.markdown("© 2025 - Amazon Price Monitor")
 
@@ -227,7 +259,7 @@ sns.set_style("whitegrid")
 # =============================================================================
 
 for _, product in df_products.iterrows():
-    df_prod = df_prices[df_prices["product_id"] == product["id"]]
+    df_prod = df_prices[df_prices["product_id"] == product["id"]].copy()
 
     st.markdown('<div class="detail-card">', unsafe_allow_html=True)
 
@@ -273,7 +305,6 @@ for _, product in df_products.iterrows():
                     ("estável", "neutral")
                 )
 
-                # TODAS AS MÉTRICAS AGRUPADAS
                 metrics_html = (
                     f'<div>'
                     f'<span class="metric-badge {trend[1]}">Tendência: {trend[0]}</span>'
@@ -285,12 +316,12 @@ for _, product in df_products.iterrows():
                 st.markdown(metrics_html, unsafe_allow_html=True)
 
                 st.write(
-                    f"**1. Tendência:** O preço variou de R$:  {first: .2f} para R$:  {last: .2f} "
+                    f"**1. Tendência:** O preço variou de R$ {first:.2f} para R$ {last:.2f} "
                     f"({diff:+.2f}, {pct:+.1f}%)."
                 )
 
                 st.write(
-                    f"**2. Faixa:** mínimo R$:  {min_p:.2f}, máximo R$:  {max_p: .2f}, média R$:  {mean_p: .2f}."
+                    f"**2. Faixa:** mínimo R$ {min_p:.2f}, máximo R$ {max_p:.2f}, média R$ {mean_p:.2f}."
                 )
 
                 if last == min_p:
@@ -299,7 +330,6 @@ for _, product in df_products.iterrows():
                     st.write("**3. Momento:** Preço no máximo histórico — talvez esperar.")
                 else:
                     st.write("**3. Momento:** Preço dentro da faixa normal.")
-
             else:
                 st.write("Dados insuficientes para análises.")
 
