@@ -78,8 +78,8 @@ def get_data():
             )
         except Exception:
             # fallback simples, se der qualquer problema: assume -3h
-            df_prices["date_local"] = df_prices["date"].dt.tz_localize(None) - pd.Timedelta(
-                hours=3
+            df_prices["date_local"] = (
+                df_prices["date"].dt.tz_localize(None) - pd.Timedelta(hours=3)
             )
     else:
         df_prices["date_local"] = pd.NaT
@@ -230,7 +230,8 @@ st.markdown("""
 with st.sidebar:
     st.markdown("### 📦 Produtos monitorados")
     st.markdown("Dados carregados 100% do GitHub (banco remoto).")
-    st.markdown("Robô atualiza o banco → Dashboard lê automaticamente.")
+    st.markdown("Robô atualiza o banco a cada 5 minutos.")
+    st.markdown("Você pode forçar a leitura clicando em **Atualizar agora** no topo.")
     st.markdown("[🔗 Repositório no GitHub](https://github.com/guilhermepires06/amazon-price-monitor)")
     st.markdown("---")
     st.markdown("**Sistema desenvolvido por:**")
@@ -244,9 +245,17 @@ with st.sidebar:
 # CONTEÚDO PRINCIPAL
 # =============================================================================
 
-df_products, df_prices = get_data()
-
 st.title("💹 Monitor de Preços")
+
+# Botão para forçar atualização (limpa cache e recarrega)
+col_top1, col_top2 = st.columns([4, 1])
+with col_top2:
+    if st.button("🔄 Atualizar agora", use_container_width=True):
+        get_data.clear()          # limpa cache do @st.cache_data
+        st.experimental_rerun()   # recarrega a página já com dados novos
+
+# Depois do possível clique, carregamos os dados (já com cache ou frescos)
+df_products, df_prices = get_data()
 
 if not df_prices.empty and df_prices["date_local"].notna().any():
     global_last = df_prices["date_local"].max()
@@ -297,11 +306,9 @@ for _, product in df_products.iterrows():
             # zera os outliers apenas no df_plot (para o gráfico ficar “liso”)
             if not df_clean.empty:
                 valid_idx = df_clean.index
-                # tudo que não está em valid_idx vira NaN em price
                 mask_out = ~df_plot.index.isin(valid_idx)
                 df_plot.loc[mask_out, "price"] = float("nan")
             else:
-                # se não deu pra limpar nada, usa o original
                 df_clean = df_prod.dropna(subset=["price"])
 
             # -------- PLOT --------
