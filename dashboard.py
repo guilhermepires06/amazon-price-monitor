@@ -265,29 +265,19 @@ st.markdown(
         color: #e5e7eb !important;
     }
 
-    /* Deixa todo container com cara de card */
-    [data-testid="stContainer"] {
-        background: #020617;
-        border-radius: 0.8rem;
-        border: 1px solid rgba(148,163,184,0.4);
-        box-shadow: 0 10px 25px rgba(15,23,42,0.75);
-        padding: 0.9rem 0.9rem 0.8rem 0.9rem;
-    }
-
-    /* Título do card */
-    .product-title {
+    .card-title {
         font-size: 0.90rem;
         font-weight: 600;
         color: #e5e7eb;
         margin-bottom: 0.5rem;
-        min-height: 2.6em;
+        min-height: 2.6em;        /* 2 linhas fixas */
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
     }
 
-    .product-price {
+    .card-price {
         font-size: 1.05rem;
         font-weight: 700;
         margin-top: 0.2rem;
@@ -295,8 +285,8 @@ st.markdown(
         margin-bottom: 0.4rem;
     }
 
-    .product-img-box {
-        height: 180px;
+    .card-img-box {
+        height: 180px;            /* área fixa da imagem */
         display: flex;
         align-items: center;
         justify-content: center;
@@ -578,20 +568,20 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
     col = cols[idx % 3]
 
     with col:
-        # Cada container agora É o card
-        with st.container():
-            # Título
+        # Cada container é um card (tipo Mercado Livre)
+        with st.container(border=True):
+            # TÍTULO
             st.markdown(
-                f'<div class="product-title">{product["name"]}</div>',
+                f'<div class="card-title">{product["name"]}</div>',
                 unsafe_allow_html=True,
             )
 
-            # Imagem (sempre mesma área)
+            # IMAGEM (área fixa)
             img_url = product.get("image_url")
             if not img_url:
                 img_url = get_product_image(product["url"])
 
-            st.markdown('<div class="product-img-box">', unsafe_allow_html=True)
+            st.markdown('<div class="card-img-box">', unsafe_allow_html=True)
             if img_url:
                 st.image(img_url, width=220)
             else:
@@ -615,20 +605,20 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                 )
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # Preço
+            # PREÇO
             latest_price = get_latest_price(df_prices, product["id"])
             if latest_price is not None:
                 st.markdown(
-                    f'<div class="product-price">R$ {latest_price:.2f}</div>',
+                    f'<div class="card-price">R$ {latest_price:.2f}</div>',
                     unsafe_allow_html=True,
                 )
             else:
                 st.markdown(
-                    '<div class="product-price">Sem preço ainda</div>',
+                    '<div class="card-price">Sem preço ainda</div>',
                     unsafe_allow_html=True,
                 )
 
-            # Botões
+            # BOTÕES
             b1, b2 = st.columns(2)
             with b1:
                 if st.button("Ver detalhes", key=f"view_{product['id']}"):
