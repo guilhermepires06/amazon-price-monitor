@@ -42,6 +42,7 @@ def get_data():
     """
     Baixa o scraping.db diretamente do GitHub (RAW),
     grava temporariamente e lê com sqlite.
+    Interpreta o campo `date` como UTC e converte para horário de Brasília.
     """
     resp = requests.get(GITHUB_DB_URL, headers=HEADERS, timeout=30)
     resp.raise_for_status()
@@ -55,13 +56,31 @@ def get_data():
     df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
     conn.close()
 
-    os.remove(tmp_path)
+    # remove o arquivo temporário
+    try:
+        os.remove(tmp_path)
+    except OSError:
+        pass
 
     # Ajuste de datas
     if "date" in df_prices.columns:
-        df_prices["date"] = pd.to_datetime(df_prices["date"])
+        # interpreta como UTC (scraper grava datetime em UTC em formato ISO)
+        df_prices["date"] = pd.to_datetime(df_prices["date"], utc=True, errors="coerce")
+        df_prices = df_prices.dropna(subset=["date"])
         df_prices = df_prices.sort_values("date")
-        df_prices["date_local"] = df_prices["date"] - pd.Timedelta(hours=3)
+
+        # converte para horário de São Paulo e remove info de timezone (naive)
+        try:
+            df_prices["date_local"] = (
+                df_prices["date"]
+                .dt.tz_convert("America/Sao_Paulo")
+                .dt.tz_localize(None)
+            )
+        except Exception:
+            # fallback simples, se der qualquer problema: assume -3h
+            df_prices["date_local"] = df_prices["date"].dt.tz_localize(None) - pd.Timedelta(
+                hours=3
+            )
     else:
         df_prices["date_local"] = pd.NaT
 
@@ -76,7 +95,7 @@ def get_data():
 def get_product_image(url: str):
     try:
         html = requests.get(url, headers=HEADERS, timeout=20).text
-    except:
+    except Exception:
         return None
 
     soup = BeautifulSoup(html, "html.parser")
@@ -95,7 +114,7 @@ def get_product_image(url: str):
         try:
             dyn = json.loads(img["data-a-dynamic-image"])
             return list(dyn.keys())[0]
-        except:
+        except Exception:
             pass
 
     meta = soup.find("meta", {"property": "og:image"})
@@ -202,8 +221,11 @@ df_products, df_prices = get_data()
 
 st.title("💹 Monitor de Preços")
 
-global_last = df_prices["date_local"].max()
-global_last_str = global_last.strftime("%d/%m %H:%M")
+if not df_prices.empty and df_prices["date_local"].notna().any():
+    global_last = df_prices["date_local"].max()
+    global_last_str = global_last.strftime("%d/%m %H:%M")
+else:
+    global_last_str = "--/-- --:--"
 
 st.markdown(
     f"""<div class="last-update-pill">🕒 Última atualização: <strong>{global_last_str}</strong></div>""",
@@ -222,7 +244,7 @@ for _, product in df_products.iterrows():
 
     df_prod = df_prices[df_prices["product_id"] == product["id"]].copy()
     prod_last = df_prod["date_local"].max() if not df_prod.empty else None
-    prod_last_str = prod_last.strftime("%d/%m %H:%M") if prod_last else "--:--"
+    prod_last_str = prod_last.strftime("%d/%m %H:%M") if prod_last is not None else "--:--"
 
     st.markdown('<div class="detail-card">', unsafe_allow_html=True)
     st.markdown(f"### {product['name']}")
@@ -262,14 +284,16 @@ for _, product in df_products.iterrows():
                 first = df_valid["price"].iloc[0]
                 last = df_valid["price"].iloc[-1]
                 diff = last - first
-                pct = diff / first * 100
+                pct = diff / first * 100 if first != 0 else 0
 
                 max_p = df_valid["price"].max()
                 min_p = df_valid["price"].min()
                 mean_p = df_valid["price"].mean()
 
                 st.write(f"**Tendência:** {diff:+.2f} ({pct:+.1f}%)")
-                st.write(f"**Faixa:** min R$ {min_p:.2f}, máx R$ {max_p:.2f}, média R$ {mean_p:.2f}")
+                st.write(
+                    f"**Faixa:** min R$ {min_p:.2f}, máx R$ {max_p:.2f}, média R$ {mean_p:.2f}"
+                )
 
                 if last == min_p:
                     st.info("Preço está no mínimo histórico.")
