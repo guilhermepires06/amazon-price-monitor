@@ -125,6 +125,33 @@ def get_product_image(url: str):
 
 
 # =============================================================================
+# FUNÇÃO PARA LIMPAR OUTLIERS
+# =============================================================================
+
+def remove_price_outliers(df: pd.DataFrame, col: str = "price") -> pd.DataFrame:
+    """
+    Remove outliers de preço usando IQR (quartis).
+    Retorna um novo DataFrame com a coluna `col` filtrada (sem outliers).
+    """
+    df_valid = df.dropna(subset=[col]).copy()
+    if len(df_valid) < 5:
+        # pouca amostra, não filtra nada
+        return df_valid
+
+    q1 = df_valid[col].quantile(0.25)
+    q3 = df_valid[col].quantile(0.75)
+    iqr = q3 - q1
+    if iqr == 0:
+        return df_valid
+
+    lower = q1 - 1.5 * iqr
+    upper = q3 + 1.5 * iqr
+
+    mask = (df_valid[col] >= lower) & (df_valid[col] <= upper)
+    return df_valid[mask]
+
+
+# =============================================================================
 # UI / CSS
 # =============================================================================
 
@@ -258,13 +285,28 @@ for _, product in df_products.iterrows():
             st.image(img_url, width=220)
         st.markdown(f"[Ver na Amazon]({product['url']})")
 
-    # GRÁFICO
+    # GRÁFICO + INSIGHTS
     with col_graph:
         if df_prod.empty:
             st.info("Sem histórico deste produto.")
         else:
+            # -------- LIMPA OUTLIERS PARA PLOT --------
+            df_plot = df_prod.copy()
+            df_clean = remove_price_outliers(df_plot, "price")
+
+            # zera os outliers apenas no df_plot (para o gráfico ficar “liso”)
+            if not df_clean.empty:
+                valid_idx = df_clean.index
+                # tudo que não está em valid_idx vira NaN em price
+                mask_out = ~df_plot.index.isin(valid_idx)
+                df_plot.loc[mask_out, "price"] = float("nan")
+            else:
+                # se não deu pra limpar nada, usa o original
+                df_clean = df_prod.dropna(subset=["price"])
+
+            # -------- PLOT --------
             fig, ax = plt.subplots(figsize=(6, 2.5))
-            sns.lineplot(df_prod, x="date_local", y="price", marker="o", ax=ax)
+            sns.lineplot(df_plot, x="date_local", y="price", marker="o", ax=ax)
             ax.set_xlabel("Data/Hora (BR)")
             ax.set_ylabel("Preço (R$)")
             ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
@@ -277,27 +319,29 @@ for _, product in df_products.iterrows():
                 unsafe_allow_html=True,
             )
 
-            # INSIGHTS
-            df_valid = df_prod.dropna(subset=["price"])
-
-            if len(df_valid) >= 2:
-                first = df_valid["price"].iloc[0]
-                last = df_valid["price"].iloc[-1]
+            # -------- INSIGHTS (USANDO df_clean, SEM OUTLIERS) --------
+            if len(df_clean) >= 2:
+                df_clean = df_clean.sort_values("date_local")
+                first = df_clean["price"].iloc[0]
+                last = df_clean["price"].iloc[-1]
                 diff = last - first
                 pct = diff / first * 100 if first != 0 else 0
 
-                max_p = df_valid["price"].max()
-                min_p = df_valid["price"].min()
-                mean_p = df_valid["price"].mean()
+                max_p = df_clean["price"].max()
+                min_p = df_clean["price"].min()
+                mean_p = df_clean["price"].mean()
 
                 st.write(f"**Tendência:** {diff:+.2f} ({pct:+.1f}%)")
                 st.write(
-                    f"**Faixa:** min R$ {min_p:.2f}, máx R$ {max_p:.2f}, média R$ {mean_p:.2f}"
+                    f"**Faixa:** min R$ {min_p:.2f}, máx R$ {max_p:.2f}, "
+                    f"média R$ {mean_p:.2f}"
                 )
 
                 if last == min_p:
                     st.info("Preço está no mínimo histórico.")
                 elif last == max_p:
                     st.warning("Preço está no máximo histórico.")
+            else:
+                st.write("Dados insuficientes para análises (após remover outliers).")
 
     st.markdown("</div>", unsafe_allow_html=True)
