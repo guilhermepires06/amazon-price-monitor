@@ -1,12 +1,19 @@
+import sqlite3
+from datetime import datetime, timezone
 import time
 import json
-import os
+import re
 
 import requests
 from bs4 import BeautifulSoup
 
-from database import connect, create_tables
-from utils import extract_price
+from utils import extract_price  # já existe no seu projeto
+
+# =============================================================================
+# CONFIG
+# =============================================================================
+
+DB_NAME = "scraping.db"
 
 HEADERS = {
     "User-Agent": (
@@ -18,128 +25,164 @@ HEADERS = {
 }
 
 
-def load_products():
-    """Carrega a lista de produtos a partir de products.json."""
-    with open("products.json", "r", encoding="utf-8") as f:
-        return json.load(f)
+# =============================================================================
+# FUNÇÕES AUXILIARES
+# =============================================================================
+
+def get_conn():
+    return sqlite3.connect(DB_NAME)
 
 
-def insert_products(products):
-    """Insere produtos no banco se ainda não existirem."""
-    conn = connect()
-    cursor = conn.cursor()
+def ensure_schema():
+    """
+    Garante que as tabelas básicas existam.
+    Não apaga nada, só cria se não existir.
+    """
+    conn = get_conn()
+    cur = conn.cursor()
 
-    for p in products:
-        cursor.execute("SELECT id FROM products WHERE name = ?", (p["name"],))
-        row = cursor.fetchone()
-        if not row:
-            cursor.execute(
-                "INSERT INTO products (name, url) VALUES (?, ?)",
-                (p["name"], p["url"]),
-            )
-
-    conn.commit()
-    conn.close()
-
-
-def save_price(product_id: int, price: float | None, old_price: float | None):
-    """Salva um registro de preço na tabela prices."""
-    conn = connect()
-    cursor = conn.cursor()
-    cursor.execute(
+    cur.execute(
         """
-        INSERT INTO prices (product_id, price, old_price)
-        VALUES (?, ?, ?)
-        """,
-        (product_id, price, old_price),
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            url TEXT NOT NULL,
+            image_url TEXT
+        )
+        """
     )
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS prices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL,
+            price REAL,
+            date TEXT NOT NULL,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )
+        """
+    )
+
     conn.commit()
     conn.close()
 
 
-def scrape_once():
-    """Executa o scraping de TODOS os produtos uma vez."""
-    conn = connect()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, name, url FROM products")
-    products = cursor.fetchall()
-    conn.close()
+def fetch_html(url: str) -> str | None:
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=30)
+        resp.raise_for_status()
+        return resp.text
+    except Exception as e:
+        print(f"[ERRO] Falha ao buscar HTML para {url}: {e}")
+        return None
 
-    if not products:
-        print("[SCRAPER] Nenhum produto encontrado no banco.")
+
+def parse_price_from_html(html: str) -> float | None:
+    """
+    Tenta extrair o preço da página da Amazon.
+    Usa alguns seletores comuns e cai no extract_price no fim.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    # 1. Preços padrão
+    span = soup.find("span", id="priceblock_ourprice") or soup.find(
+        "span", id="priceblock_dealprice"
+    )
+    if span and span.get_text(strip=True):
+        price = extract_price(span.get_text(strip=True))
+        if price is not None:
+            return price
+
+    # 2. Qualquer span com classe a-offscreen (Amazon usa muito isso)
+    span = soup.select_one("span.a-offscreen")
+    if span and span.get_text(strip=True):
+        price = extract_price(span.get_text(strip=True))
+        if price is not None:
+            return price
+
+    # 3. Extrai qualquer coisa parecida com R$ 1.234,56
+    text = soup.get_text(" ", strip=True)
+    match = re.search(r"R\$\s*[\d\.\,]+", text)
+    if match:
+        price = extract_price(match.group(0))
+        if price is not None:
+            return price
+
+    # Nada encontrado
+    return None
+
+
+# =============================================================================
+# LÓGICA PRINCIPAL
+# =============================================================================
+
+def run_scraper():
+    ensure_schema()
+
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # Lê todos os produtos cadastrados
+    df_products = None
+    try:
+        import pandas as pd
+
+        df_products = pd.read_sql_query("SELECT * FROM products", conn)
+    except Exception as e:
+        print(f"[ERRO] Não foi possível ler tabela products: {e}")
+        conn.close()
         return
 
-    for product_id, name, url in products:
-        print(f"[SCRAPER] Coletando dados de: {name}")
+    if df_products.empty:
+        print("[INFO] Nenhum produto cadastrado em products.")
+        conn.close()
+        return
 
-        try:
-            response = requests.get(url, headers=HEADERS, timeout=30)
-            response.raise_for_status()
-        except Exception as e:
-            print(f"[ERRO] Falha ao acessar {url}: {e}")
-            continue
+    # Timestamp único da rodada em UTC
+    now_utc = datetime.now(timezone.utc).replace(microsecond=0)
+    now_str = now_utc.isoformat()  # será convertido no dashboard
 
-        soup = BeautifulSoup(response.text, "html.parser")
+    print(f"[INFO] Iniciando rodada de scraping em {now_str} (UTC)")
+    sucessos = 0
+    falhas = 0
 
-        # Preço atual (preço principal)
-        price_whole = soup.find("span", class_="a-price-whole")
-        price_fraction = soup.find("span", class_="a-price-fraction")
+    for _, prod in df_products.iterrows():
+        pid = int(prod["id"])
+        name = prod["name"]
+        url = prod["url"]
 
-        if price_whole and price_fraction:
-            full_price_str = f"{price_whole.text.strip()},{price_fraction.text.strip()}"
-        elif price_whole:
-            full_price_str = price_whole.text.strip()
+        print(f"[INFO] Coletando produto {pid} - {name}")
+
+        html = fetch_html(url)
+        if html is None:
+            price = None
+            falhas += 1
+            print(f"[WARN] HTML não carregado para {name}. Gravando price=NULL.")
         else:
-            full_price_str = None
+            price = parse_price_from_html(html)
+            if price is None:
+                falhas += 1
+                print(f"[WARN] Não consegui extrair preço de {name}. Gravando price=NULL.")
+            else:
+                sucessos += 1
+                print(f"[OK] Preço extraído para {name}: {price}")
 
-        price = extract_price(full_price_str)
+        # Insere SEMPRE um registro para este produto nesta rodada
+        cur.execute(
+            "INSERT INTO prices (product_id, price, date) VALUES (?, ?, ?)",
+            (pid, price, now_str),
+        )
+        conn.commit()
 
-        # Preço antigo (geralmente riscado)
-        old_price_tag = soup.find("span", class_="a-text-price")
-        old_price_str = old_price_tag.get_text(strip=True) if old_price_tag else None
-        old_price = extract_price(old_price_str)
+        # Pequeno delay para não forçar a Amazon demais
+        time.sleep(2)
 
-        print(f" → Preço atual: {price} | Preço antigo: {old_price}")
-        save_price(product_id, price, old_price)
-
-
-def run_forever(interval_hours: int = 1):
-    """
-    Loop infinito: executa o scraping a cada `interval_hours` horas.
-
-    Use isso LOCALMENTE (por exemplo: python scraper.py)
-    se quiser deixar rodando em background.
-    """
-    create_tables()
-    insert_products(load_products())
-
-    while True:
-        print("\n=== INICIANDO SCRAPING ===")
-        scrape_once()
-        print(f"→ Aguardando {interval_hours} horas...\n")
-        time.sleep(interval_hours * 60 * 60)
-
-
-def run_once_for_actions():
-    """
-    Modo especial para GitHub Actions:
-    - Cria tabelas
-    - Garante produtos cadastrados
-    - Roda scraping UMA vez
-    - Encerra
-    """
-    print("[SCRAPER] Modo GitHub Actions (execução única).")
-    create_tables()
-    insert_products(load_products())
-    scrape_once()
-    print("[SCRAPER] Execução concluída.")
+    conn.close()
+    print(
+        f"[INFO] Rodada finalizada. Sucessos: {sucessos} | Falhas: {falhas} | Timestamp: {now_str} (UTC)"
+    )
 
 
 if __name__ == "__main__":
-    # Se estiver rodando dentro do GitHub Actions,
-    # existe a variável de ambiente GITHUB_ACTIONS=true
-    if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
-        run_once_for_actions()
-    else:
-        # Modo normal (local): loop infinito
-        run_forever(interval_hours=1)
+    run_scraper()
