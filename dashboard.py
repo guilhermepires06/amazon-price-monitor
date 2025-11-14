@@ -32,6 +32,7 @@ HEADERS = {
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
+
 # =========================
 # ATUALIZAR DB DO GITHUB
 # =========================
@@ -40,9 +41,6 @@ def refresh_db_from_github():
     """
     Baixa a versão mais recente do scraping.db do GitHub
     e salva localmente com o nome DB_NAME.
-
-    Assim, o dashboard sempre usa o mesmo banco que o GitHub Actions
-    atualiza periodicamente.
     """
     try:
         resp = requests.get(GITHUB_DB_URL, timeout=20)
@@ -51,7 +49,6 @@ def refresh_db_from_github():
             f.write(resp.content)
         print("[DB] Banco atualizado a partir do GitHub.")
     except Exception as e:
-        # Se der erro, não derruba o app – usa o DB local mesmo
         print(f"[DB] Erro ao atualizar banco do GitHub: {e}")
 
 
@@ -293,25 +290,6 @@ st.markdown(
     h1, h2, h3, h4, h5, h6 {
         color: #e5e7eb !important;
     }
-    .product-card {
-        padding: 1rem;
-        border-radius: 0.9rem;
-        background: #020617;
-        border: 1px solid rgba(148,163,184,0.3);
-        margin-bottom: 2.5rem;  /* espaçamento entre linhas da grid */
-        box-shadow: 0 10px 30px rgba(15,23,42,0.7);
-        text-align: center;
-        min-height: 260px;      /* altura mínima para alinhar os cards */
-        display: flex;
-        flex-direction: column;
-        justify-content: flex-start;
-    }
-    .product-card img {
-        max-height: 150px;
-        object-fit: contain;
-        background: #020617;
-        margin-bottom: 0.5rem;
-    }
     .product-header {
         background: #020617;
         border-radius: 999px;
@@ -334,7 +312,7 @@ st.markdown(
         background: #020617;
         border: 1px solid rgba(148,163,184,0.4);
         margin-top: 1rem;
-        margin-bottom: 4rem; /* espaço antes da grid (~10% da tela) */
+        margin-bottom: 4rem; /* espaço antes da grid */
         box-shadow: 0 18px 45px rgba(15,23,42,0.75);
     }
     .metric-badge {
@@ -365,6 +343,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+
 # =========================
 # INICIALIZAÇÃO DO DB / ESTADO
 # =========================
@@ -381,8 +360,9 @@ if "selected_product_id" not in st.session_state:
 if "confirm_delete_id" not in st.session_state:
     st.session_state["confirm_delete_id"] = None
 
+
 # =========================
-# SIDEBAR (CADASTRO AQUI)
+# SIDEBAR (CADASTRO)
 # =========================
 
 with st.sidebar:
@@ -427,15 +407,15 @@ with st.sidebar:
         "pelo GitHub Actions."
     )
 
+
 # =========================
 # CONTEÚDO PRINCIPAL
 # =========================
 
 df_products, df_prices = get_data()
-
 sns.set_style("whitegrid")
 
-# ----- Header com título + horário da última atualização -----
+# Header com título + horário da última atualização
 col_title, col_update = st.columns([4, 1])
 
 with col_title:
@@ -444,7 +424,6 @@ with col_title:
 with col_update:
     if not df_prices.empty and df_prices["date_local"].notna().any():
         last_ts = df_prices["date_local"].max()
-        # só data + hora (ou só hora se quiser)
         display_ts = last_ts.strftime("%d/%m %H:%M")
         st.markdown(
             f"""
@@ -470,6 +449,7 @@ if df_products.empty:
 
 selected_id = st.session_state.get("selected_product_id")
 confirm_delete_id = st.session_state.get("confirm_delete_id")
+
 
 # ============= CONFIRMAÇÃO DE EXCLUSÃO =============
 
@@ -497,6 +477,7 @@ if confirm_delete_id is not None:
                 st.session_state["confirm_delete_id"] = None
                 st.info("Exclusão cancelada.")
                 st.rerun()
+
 
 # ============= DETALHE NO TOPO (SELECIONADO) =============
 
@@ -545,7 +526,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
                         st.info("Imagem removida.")
                     st.rerun()
             with del_col:
-                if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
+                if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"]:
                     st.session_state["confirm_delete_id"] = product["id"]
                     st.rerun()
 
@@ -636,7 +617,8 @@ if selected_id is not None and selected_id in df_products["id"].values:
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-# ============= GRID DE CARDS =============
+
+# ============= GRID DE CARDS (SEM DIV VAZIA) =============
 
 st.markdown("## Produtos monitorados")
 
@@ -645,13 +627,13 @@ cols = st.columns(3)
 for idx, (_, product) in enumerate(df_products.iterrows()):
     col = cols[idx % 3]
     with col:
-        st.markdown('<div class="product-card">', unsafe_allow_html=True)
-
+        # título
         st.markdown(
             f'<div class="product-header">{product["name"]}</div>',
             unsafe_allow_html=True,
         )
 
+        # imagem
         img_url = product.get("image_url")
         if not img_url:
             img_url = get_product_image(product["url"])
@@ -679,6 +661,7 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                 unsafe_allow_html=True,
             )
 
+        # preço atual
         latest_price = get_latest_price(df_prices, product["id"])
         if latest_price is not None:
             st.markdown(
@@ -691,6 +674,7 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                 unsafe_allow_html=True,
             )
 
+        # botões
         b1, b2 = st.columns(2)
         with b1:
             if st.button("Ver detalhes", key=f"view_{product['id']}"):
@@ -700,5 +684,3 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
             if st.button("🗑 Excluir", key=f"del_{product['id']}"):
                 st.session_state["confirm_delete_id"] = product["id"]
                 st.rerun()
-
-        st.markdown("</div>", unsafe_allow_html=True)
