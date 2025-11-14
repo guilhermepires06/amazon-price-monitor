@@ -11,7 +11,7 @@ import requests
 import streamlit as st
 from bs4 import BeautifulSoup
 
-from utils import extract_price 
+from utils import extract_price
 
 # =============================================================================
 # CONFIG BÁSICA
@@ -20,7 +20,7 @@ from utils import extract_price
 DB_NAME = "scraping.db"
 
 # URL RAW do banco no GitHub (ATUALMENTE NÃO ESTÁ SENDO USADA)
-# GITHUB_DB_URL = "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"
+GITHUB_DB_URL = "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"
 
 HEADERS = {
     "User-Agent": (
@@ -304,8 +304,9 @@ with st.sidebar:
         "visualização dos preços e gráficos."
     )
     st.markdown("---")
-    st.caption(
-       
+    st.markdown(
+        "Este painel lê diretamente o banco local **`scraping.db`**.  \n"
+        "Adições/remoções de produtos devem ser feitas fora da interface."
     )
 
 # =============================================================================
@@ -328,7 +329,7 @@ with col_last:
     st.markdown(
         f"""
         <div class="last-update-pill">
-            <span>Última atualização:</span>
+            <span>🕒 Última atualização:</span>
             <strong>{last_str}</strong>
         </div>
         """,
