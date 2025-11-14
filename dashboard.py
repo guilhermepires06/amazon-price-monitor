@@ -251,8 +251,8 @@ st.title("💹 Monitor de Preços")
 col_top1, col_top2 = st.columns([4, 1])
 with col_top2:
     if st.button("🔄 Atualizar agora", use_container_width=True):
-        get_data.clear()          # limpa cache do @st.cache_data
-        st.experimental_rerun()   # recarrega a página já com dados novos
+        get_data.clear()   # limpa cache do @st.cache_data
+        st.rerun()         # recarrega a página já com dados novos
 
 # Depois do possível clique, carregamos os dados (já com cache ou frescos)
 df_products, df_prices = get_data()
