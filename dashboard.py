@@ -1,7 +1,5 @@
 import sqlite3
 import json
-import os
-import tempfile
 from datetime import datetime, timedelta
 
 import matplotlib.pyplot as plt
@@ -19,8 +17,7 @@ from utils import extract_price
 # CONFIG BÁSICA
 # =============================================================================
 
-# 👉 ATENÇÃO: esse é o ÚNICO banco que o dashboard lê
-GITHUB_DB_URL = ("https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db")
+DB_NAME = "scraping.db"  # arquivo local, versionado no próprio repositório
 
 HEADERS = {
     "User-Agent": (
@@ -33,49 +30,24 @@ HEADERS = {
 
 
 # =============================================================================
-# BANCO – SEMPRE DO GITHUB (COM CACHE LIMPO PELO BOTÃO)
+# BANCO – LENDO DIRETO O scraping.db LOCAL
 # =============================================================================
 
-@st.cache_data(show_spinner=False, ttl=300)
+@st.cache_data(show_spinner=False, ttl=120)
 def get_data():
     """
-    Baixa o scraping.db diretamente do GitHub (RAW),
-    grava em arquivo temporário e lê com sqlite.
+    Lê o scraping.db local (que veio do GitHub).
     Interpreta o campo `date` como UTC e converte para horário de Brasília.
-    NÃO altera os valores de price (mostra o que está no banco).
-    Se houver erro HTTP/rede, retorna DataFrames vazios e não derruba o app.
+    Não altera os valores de price.
     """
     try:
-        resp = requests.get(GITHUB_DB_URL, headers=HEADERS, timeout=30)
-    except requests.RequestException as e:
-        st.error(f"❌ Erro ao baixar o banco do GitHub: {e}")
-        # dataframes vazios para o app continuar rodando
-        return pd.DataFrame(), pd.DataFrame()
-
-    if resp.status_code != 200:
-        st.error(
-            f"❌ Falha ao baixar scraping.db do GitHub. "
-            f"Status HTTP: {resp.status_code}"
-        )
-        return pd.DataFrame(), pd.DataFrame()
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp:
-        tmp.write(resp.content)
-        tmp_path = tmp.name
-
-    try:
-        conn = sqlite3.connect(tmp_path)
+        conn = sqlite3.connect(DB_NAME)
         df_products = pd.read_sql_query("SELECT * FROM products", conn)
         df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
         conn.close()
     except Exception as e:
-        st.error(f"❌ Erro ao ler o arquivo de banco de dados: {e}")
+        st.error(f"❌ Erro ao ler o banco local '{DB_NAME}': {e}")
         return pd.DataFrame(), pd.DataFrame()
-    finally:
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
 
     # Ajuste de datas
     if "date" in df_prices.columns:
@@ -96,7 +68,6 @@ def get_data():
     else:
         df_prices["date_local"] = pd.NaT
 
-    # aqui NÃO mexemos em price: é o valor cru que o scraper salvou
     return df_products, df_prices
 
 
@@ -225,9 +196,8 @@ st.markdown(
 
 with st.sidebar:
     st.markdown("### 📦 Produtos monitorados")
-    st.markdown("Dados carregados **100%** do GitHub (`scraping.db`).")
-    st.markdown("Robô atualiza o banco a cada 5 minutos via GitHub Actions.")
-    st.markdown("Use o botão **🔄 Atualizar agora** para forçar leitura nova.")
+    st.markdown("Dados carregados do banco local `scraping.db` (versão no repositório).")
+    st.markdown("GitHub Actions atualiza o banco e faz commit periodicamente.")
     st.markdown("[🔗 Repositório no GitHub](https://github.com/guilhermepires06/amazon-price-monitor)")
     st.markdown("---")
     st.markdown("**Sistema desenvolvido por:**")
@@ -241,7 +211,6 @@ with st.sidebar:
 # CONTEÚDO PRINCIPAL
 # =============================================================================
 
-# título com chip de versão pra você ver que trocou de fato
 title_col, ver_col, btn_col = st.columns([3, 1, 1])
 
 with title_col:
@@ -251,17 +220,14 @@ with ver_col:
     st.markdown('<div class="version-chip">v2 • dashboard.py</div>', unsafe_allow_html=True)
 
 with btn_col:
-    if st.button("🔄 Atualizar agora", use_container_width=True):
-        # Zera cache do get_data() e recarrega tudo
+    if st.button("🔄 Atualizar cache", use_container_width=True):
         get_data.clear()
         st.rerun()
 
-# Carrega dados (do cache ou frescos, se acabou de clicar no botão)
 df_products, df_prices = get_data()
 
-# Se falhou para baixar o banco, df_products/df_prices estarão vazios
 if df_products.empty or df_prices.empty:
-    st.warning("Não foi possível carregar dados do banco remoto no momento.")
+    st.warning("Não foi possível carregar dados do banco local no momento.")
     st.stop()
 
 if df_prices["date_local"].notna().any():
@@ -315,7 +281,6 @@ for _, product in df_products.iterrows():
         if df_prod.empty:
             st.info("Sem histórico deste produto.")
         else:
-            # gráfico cru: exatamente como está no banco
             fig, ax = plt.subplots(figsize=(6, 2.5))
             sns.lineplot(df_prod, x="date_local", y="price", marker="o", ax=ax)
             ax.set_xlabel("Data/Hora (BR)")
@@ -324,7 +289,6 @@ for _, product in df_products.iterrows():
             plt.xticks(rotation=25)
             st.pyplot(fig)
 
-            # Badge com última linha da tabela
             if last_price is not None and pd.notna(last_price):
                 last_price_str = f"R$ {last_price:.2f}"
             else:
@@ -337,7 +301,6 @@ for _, product in df_products.iterrows():
                 unsafe_allow_html=True,
             )
 
-            # Pequeno debug pra você ver o que o banco tem pra esse produto
             with st.expander("Ver últimos registros brutos desse produto"):
                 st.write(
                     df_prod.sort_values("date_local", ascending=False)
