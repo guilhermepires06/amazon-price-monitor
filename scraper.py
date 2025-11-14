@@ -23,7 +23,7 @@ HEADERS = {
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
 }
 
-# Ativa ou não o filtro de outlier
+# Ativa ou não o filtro de outlier por histórico
 USE_OUTLIER_FILTER = True
 
 
@@ -213,11 +213,13 @@ def parse_price_from_html(html: str) -> float | None:
     """
     Tenta extrair o preço a partir do HTML usando vários seletores.
 
-    Prioridade:
-      1) Blocos principais de preço usando a-price-whole/a-price-fraction.
-      2) Fallbacks antigos (IDs clássicos, .a-offscreen, texto da página).
+    NOVA LÓGICA:
+      - Coleta TODOS os preços possíveis em uma lista (candidates).
+      - No final, retorna o MENOR preço válido encontrado.
+      - Isso evita pegar preço antigo de 2k quando o atual é 158.
     """
     soup = BeautifulSoup(html, "html.parser")
+    candidates: list[float] = []
 
     # 1) Blocos de preço principais (desktop / corePrice)
     price_containers_selectors = [
@@ -231,13 +233,13 @@ def parse_price_from_html(html: str) -> float | None:
         block = soup.select_one(sel)
         price = _parse_price_from_price_block(block)
         if price is not None and price > 1:
-            return price
+            candidates.append(price)
 
-    # 2) Qualquer .a-price na página (primeiro bloco válido)
+    # 2) Qualquer .a-price na página (todos os blocos)
     for block in soup.select("span.a-price, div.a-price"):
         price = _parse_price_from_price_block(block)
         if price is not None and price > 1:
-            return price
+            candidates.append(price)
 
     # 3) IDs clássicos da Amazon (fallback antigo)
     for span_id in [
@@ -250,29 +252,33 @@ def parse_price_from_html(html: str) -> float | None:
         if span and span.get_text(strip=True):
             price = extract_price(span.get_text())
             if price is not None and price > 1:
-                return price
+                candidates.append(price)
 
     # 4) Estrutura nova: .a-price .a-offscreen
     span = soup.select_one(".a-price .a-offscreen")
     if span and span.get_text(strip=True):
         price = extract_price(span.get_text())
         if price is not None and price > 1:
-            return price
+            candidates.append(price)
 
     # 5) Qualquer span com a classe a-offscreen
     span = soup.select_one("span.a-offscreen")
     if span and span.get_text(strip=True):
         price = extract_price(span.get_text())
         if price is not None and price > 1:
-            return price
+            candidates.append(price)
 
     # 6) Fallback extremo: usa todo o texto da página
     text = soup.get_text(" ", strip=True)
     price = extract_price(text)
     if price is not None and price > 1:
-        return price
+        candidates.append(price)
 
-    return None
+    if not candidates:
+        return None
+
+    best_price = min(candidates)
+    return best_price
 
 
 def get_price_with_retries(url: str,
@@ -291,7 +297,7 @@ def get_price_with_retries(url: str,
 
         price = parse_price_from_html(html)
         if price is not None and price > 1:
-            print(f"  [OK] Preço encontrado bruto: R$ {price:.2f}")
+            print(f"  [OK] Preço encontrado bruto (menor da página): R$ {price:.2f}")
             return float(round(price, 2))
 
         print("  [WARN] Preço não encontrado ou inválido, tentando de novo...")
