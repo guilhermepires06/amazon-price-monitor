@@ -340,7 +340,7 @@ st.markdown(
         display: none;
     }
 
-    /* Aqui estilizamos o container inteiro que contém a flag (título, imagem, preço e botões) */
+    /* Container inteiro do card */
     div[data-testid="stVerticalBlock"]:has(.product-card-flag) {
         position: relative;
         display: flex;
@@ -439,19 +439,33 @@ st.markdown(
         margin-top: 0.45rem;
     }
 
-    /* DETALHES DO PRODUTO --------------------------------------------------- */
-    .detail-card {
-        padding: 1.25rem 1.4rem;
+    /* MODAL DE DETALHES ----------------------------------------------------- */
+    #detail-modal-flag { display: none; }
+
+    div[data-testid="stVerticalBlock"]:has(#detail-modal-flag) {
+        position: fixed;
+        inset: 0;
+        background: rgba(15,23,42,0.88);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem 3rem;
+    }
+
+    .detail-modal-card {
+        position: relative;
+        max-width: 1100px;
+        width: 100%;
+        max-height: 90vh;
+        overflow-y: auto;
+        padding: 1.4rem 1.5rem 1.1rem 1.5rem;
         border-radius: 1.1rem;
         background: radial-gradient(circle at top left, #020617, #020617 45%, #020617 100%);
         border: 1px solid rgba(148,163,184,0.6);
-        margin-top: 0.7rem;
-        margin-bottom: 1.6rem;
-        box-shadow: 0 18px 50px rgba(15,23,42,0.95);
-        position: relative;
-        overflow: hidden;
+        box-shadow: 0 24px 70px rgba(15,23,42,1);
     }
-    .detail-card::before {
+    .detail-modal-card::before {
         content: "";
         position: absolute;
         inset: -40%;
@@ -459,7 +473,7 @@ st.markdown(
         opacity: 0.9;
         pointer-events: none;
     }
-    .detail-card h3, .detail-card h4 {
+    .detail-modal-inner {
         position: relative;
         z-index: 1;
     }
@@ -595,7 +609,74 @@ if df_products.empty:
 sns.set_style("whitegrid")
 
 # ----------------------------------------------------------------------------- #
-# BLOCO DE DETALHES (PAINEL FIXO)
+# GRID DE CARDS – PRODUTOS MONITORADOS
+# ----------------------------------------------------------------------------- #
+
+st.markdown('<h2 class="section-title">Produtos monitorados</h2>', unsafe_allow_html=True)
+
+cols = st.columns(3, gap="large")
+
+for idx, (_, product) in enumerate(df_products.iterrows()):
+    col = cols[idx % 3]
+
+    with col:
+        with st.container():
+            # FLAG que marca este bloco como um card (CSS pega o container inteiro)
+            st.markdown('<div class="product-card-flag"></div>', unsafe_allow_html=True)
+
+            # TÍTULO
+            st.markdown(
+                f'<div class="product-title">{product["name"]}</div>',
+                unsafe_allow_html=True,
+            )
+
+            # IMAGEM
+            img_url = product.get("image_url")
+            if not img_url:
+                img_url = get_product_image(product["url"])
+
+            st.markdown('<div class="product-image-wrapper">', unsafe_allow_html=True)
+            if img_url:
+                st.image(img_url, use_column_width=False, width=230)
+            else:
+                st.markdown(
+                    '<div class="product-image-placeholder">Imagem indisponível</div>',
+                    unsafe_allow_html=True,
+                )
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # PREÇO
+            latest_price = get_latest_price(df_prices, product["id"])
+            st.markdown('<div class="product-card-footer">', unsafe_allow_html=True)
+            if latest_price is not None:
+                st.markdown(
+                    f'<span class="product-price-badge">💰 R$ {latest_price:.2f}</span>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    '<span class="product-price-badge">Sem preço ainda</span>',
+                    unsafe_allow_html=True,
+                )
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # BOTÕES – dentro do card azul
+            st.markdown('<div class="product-actions-row">', unsafe_allow_html=True)
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("Ver detalhes", key=f"view_{product['id']}"):
+                    st.session_state["selected_product_id"] = product["id"]
+                    st.rerun()
+            with b2:
+                if st.button("🗑 Excluir", key=f"del_{product['id']}"):
+                    delete_product_from_db(product["id"])
+                    if st.session_state.get("selected_product_id") == product["id"]:
+                        st.session_state["selected_product_id"] = None
+                    st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+# ----------------------------------------------------------------------------- #
+# MODAL FLUTUANTE DE DETALHES
 # ----------------------------------------------------------------------------- #
 
 selected_id = st.session_state.get("selected_product_id")
@@ -604,15 +685,17 @@ if selected_id is not None and selected_id in df_products["id"].values:
     product = df_products[df_products["id"] == selected_id].iloc[0]
     df_prod = df_prices[df_prices["product_id"] == selected_id].copy()
 
-    st.markdown('<h2 class="section-title">Detalhes do produto selecionado</h2>', unsafe_allow_html=True)
     with st.container():
-        st.markdown('<div class="detail-card">', unsafe_allow_html=True)
+        # Flag para o CSS transformar esse container em overlay full-screen
+        st.markdown('<div id="detail-modal-flag"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="detail-modal-card"><div class="detail-modal-inner">', unsafe_allow_html=True)
 
         top_cols = st.columns([6, 1])
         with top_cols[0]:
             st.markdown(f"### {product['name']}")
         with top_cols[1]:
-            if st.button("Fechar detalhes"):
+            # Botão de fechar no canto superior direito do card
+            if st.button("✕ Fechar", key="close_detail"):
                 st.session_state["selected_product_id"] = None
                 st.rerun()
 
@@ -735,71 +818,4 @@ if selected_id is not None and selected_id in df_products["id"].values:
                         "Deixe o coletor rodando por mais tempo."
                     )
 
-        st.markdown("</div>", unsafe_allow_html=True)
-
-# ----------------------------------------------------------------------------- #
-# GRID DE CARDS – PRODUTOS MONITORADOS
-# ----------------------------------------------------------------------------- #
-
-st.markdown('<h2 class="section-title">Produtos monitorados</h2>', unsafe_allow_html=True)
-
-cols = st.columns(3, gap="large")
-
-for idx, (_, product) in enumerate(df_products.iterrows()):
-    col = cols[idx % 3]
-
-    with col:
-        with st.container():
-            # FLAG que marca este bloco como um card (CSS pega o container inteiro)
-            st.markdown('<div class="product-card-flag"></div>', unsafe_allow_html=True)
-
-            # TÍTULO
-            st.markdown(
-                f'<div class="product-title">{product["name"]}</div>',
-                unsafe_allow_html=True,
-            )
-
-            # IMAGEM
-            img_url = product.get("image_url")
-            if not img_url:
-                img_url = get_product_image(product["url"])
-
-            st.markdown('<div class="product-image-wrapper">', unsafe_allow_html=True)
-            if img_url:
-                st.image(img_url, use_column_width=False, width=230)
-            else:
-                st.markdown(
-                    '<div class="product-image-placeholder">Imagem indisponível</div>',
-                    unsafe_allow_html=True,
-                )
-            st.markdown("</div>", unsafe_allow_html=True)
-
-            # PREÇO
-            latest_price = get_latest_price(df_prices, product["id"])
-            st.markdown('<div class="product-card-footer">', unsafe_allow_html=True)
-            if latest_price is not None:
-                st.markdown(
-                    f'<span class="product-price-badge">💰 R$ {latest_price:.2f}</span>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    '<span class="product-price-badge">Sem preço ainda</span>',
-                    unsafe_allow_html=True,
-                )
-            st.markdown("</div>", unsafe_allow_html=True)
-
-            # BOTÕES – agora DENTRO do card azul
-            st.markdown('<div class="product-actions-row">', unsafe_allow_html=True)
-            b1, b2 = st.columns(2)
-            with b1:
-                if st.button("Ver detalhes", key=f"view_{product['id']}"):
-                    st.session_state["selected_product_id"] = product["id"]
-                    st.rerun()
-            with b2:
-                if st.button("🗑 Excluir", key=f"del_{product['id']}"):
-                    delete_product_from_db(product["id"])
-                    if st.session_state.get("selected_product_id") == product["id"]:
-                        st.session_state["selected_product_id"] = None
-                    st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("</div></div>", unsafe_allow_html=True)
