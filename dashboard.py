@@ -20,9 +20,7 @@ from utils import extract_price
 # =============================================================================
 
 # 👉 ATENÇÃO: esse é o ÚNICO banco que o dashboard lê
-GITHUB_DB_URL = (
-    "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"
-)
+GITHUB_DB_URL = ("https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db")
 
 HEADERS = {
     "User-Agent": (
