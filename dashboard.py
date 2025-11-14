@@ -272,7 +272,6 @@ st.set_page_config(
     page_title="Monitor de Preços Amazon",
     layout="wide",
     page_icon="💹",
-    initial_sidebar_state="collapsed",
 )
 
 st.markdown(
@@ -300,20 +299,23 @@ st.markdown(
         text-align: center;
         color: #e5e7eb;
     }
+    .product-card {
+        background: transparent;
+        padding: 0.5rem 0.25rem 2.0rem 0.25rem;
+        margin-bottom: 1.5rem;
+        min-height: 320px; /* deixa todos mais alinhados */
+        text-align: center;
+    }
+    .product-card img {
+        max-height: 190px;
+        object-fit: contain;
+        margin-bottom: 0.5rem;
+    }
     .product-price {
         font-size: 1.1rem;
         font-weight: 600;
-        margin-top: 0.5rem;
+        margin-top: 0.3rem;
         color: #a5b4fc;
-    }
-    .detail-card {
-        padding: 1.25rem;
-        border-radius: 1rem;
-        background: #020617;
-        border: 1px solid rgba(148,163,184,0.4);
-        margin-top: 1rem;
-        margin-bottom: 4rem; /* espaço antes da grid */
-        box-shadow: 0 18px 45px rgba(15,23,42,0.75);
     }
     .metric-badge {
         display: inline-block;
@@ -337,6 +339,32 @@ st.markdown(
         text-align: right;
         color: #e5e7eb;
         white-space: nowrap;
+    }
+    /* ===== MODAL ===== */
+    .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15,23,42,0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+    }
+    .modal-content {
+        width: 90%;
+        max-width: 1100px;
+        max-height: 90vh;
+        overflow-y: auto;
+        background: #020617;
+        border-radius: 1rem;
+        padding: 1.5rem;
+        border: 1px solid #38bdf8;
+        box-shadow: 0 25px 80px rgba(15,23,42,0.9);
+    }
+    .modal-close-row {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 0.5rem;
     }
     </style>
     """,
@@ -479,23 +507,97 @@ if confirm_delete_id is not None:
                 st.rerun()
 
 
-# ============= DETALHE NO TOPO (SELECIONADO) =============
+# ============= GRID DE CARDS (ALINHADA) =============
+
+st.markdown("## Produtos monitorados")
+
+cols = st.columns(3)
+
+for idx, (_, product) in enumerate(df_products.iterrows()):
+    col = cols[idx % 3]
+    with col:
+        st.markdown('<div class="product-card">', unsafe_allow_html=True)
+
+        # título
+        st.markdown(
+            f'<div class="product-header">{product["name"]}</div>',
+            unsafe_allow_html=True,
+        )
+
+        # imagem
+        img_url = product.get("image_url")
+        if not img_url:
+            img_url = get_product_image(product["url"])
+
+        if img_url:
+            st.image(img_url, width=230)
+        else:
+            st.markdown(
+                """
+                <div style="
+                    width: 230px;
+                    height: 150px;
+                    background: #111827;
+                    border-radius: 8px;
+                    border: 1px solid #334155;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 0.8rem;
+                    color: #64748b;
+                    margin: 0 auto 0.5rem auto;">
+                    Imagem indisponível
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        # preço atual
+        latest_price = get_latest_price(df_prices, product["id"])
+        if latest_price is not None:
+            st.markdown(
+                f'<div class="product-price">R$ {latest_price:.2f}</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div class="product-price">Sem preço ainda</div>',
+                unsafe_allow_html=True,
+            )
+
+        # botões
+        b1, b2 = st.columns(2)
+        with b1:
+            if st.button("Ver detalhes", key=f"view_{product['id']}"):
+                st.session_state["selected_product_id"] = product["id"]
+                st.rerun()
+        with b2:
+            if st.button("🗑 Excluir", key=f"del_{product['id']}"):
+                st.session_state["confirm_delete_id"] = product["id"]
+                st.rerun()
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ============= MODAL DE DETALHES =============
 
 if selected_id is not None and selected_id in df_products["id"].values:
     product = df_products[df_products["id"] == selected_id].iloc[0]
     df_prod = df_prices[df_prices["product_id"] == selected_id].copy()
 
-    st.markdown("## Detalhes do produto selecionado")
-    with st.container():
-        st.markdown('<div class="detail-card">', unsafe_allow_html=True)
+    modal = st.container()
+    with modal:
+        # abre div do overlay + conteúdo
+        st.markdown('<div class="modal-overlay"><div class="modal-content">', unsafe_allow_html=True)
 
-        top_cols = st.columns([6, 1])
-        with top_cols[0]:
-            st.markdown(f"### {product['name']}")
-        with top_cols[1]:
-            if st.button("Fechar detalhes"):
+        # linha de fechar
+        close_col = st.columns([6, 1])[1]
+        with close_col:
+            if st.button("Fechar", key="close_modal"):
                 st.session_state["selected_product_id"] = None
                 st.rerun()
+
+        st.markdown(f"### {product['name']}")
 
         col_img, col_graph = st.columns([1, 2])
 
@@ -503,7 +605,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
             st.write("**Produto**")
             img_url = product.get("image_url") or get_product_image(product["url"])
             if img_url:
-                st.image(img_url, width="stretch")
+                st.image(img_url, width=280)
             else:
                 st.info("Sem imagem disponível.")
             st.markdown(f"[Ver na Amazon]({product['url']})")
@@ -528,6 +630,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
             with del_col:
                 if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
                     st.session_state["confirm_delete_id"] = product["id"]
+                    st.session_state["selected_product_id"] = None
                     st.rerun()
 
         with col_graph:
@@ -615,72 +718,5 @@ if selected_id is not None and selected_id in df_products["id"].values:
                         "Deixe o coletor rodando por mais tempo."
                     )
 
-        st.markdown("</div>", unsafe_allow_html=True)
-
-
-# ============= GRID DE CARDS (SEM DIV VAZIA) =============
-
-st.markdown("## Produtos monitorados")
-
-cols = st.columns(3)
-
-for idx, (_, product) in enumerate(df_products.iterrows()):
-    col = cols[idx % 3]
-    with col:
-        # título
-        st.markdown(
-            f'<div class="product-header">{product["name"]}</div>',
-            unsafe_allow_html=True,
-        )
-
-        # imagem
-        img_url = product.get("image_url")
-        if not img_url:
-            img_url = get_product_image(product["url"])
-
-        if img_url:
-            st.image(img_url, width=220)
-        else:
-            st.markdown(
-                """
-                <div style="
-                    width: 220px;
-                    height: 150px;
-                    background: #111827;
-                    border-radius: 8px;
-                    border: 1px solid #334155;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 0.8rem;
-                    color: #64748b;
-                    margin: 0 auto 0.5rem auto;">
-                    Imagem indisponível
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        # preço atual
-        latest_price = get_latest_price(df_prices, product["id"])
-        if latest_price is not None:
-            st.markdown(
-                f'<div class="product-price">R$ {latest_price:.2f}</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                '<div class="product-price">Sem preço ainda</div>',
-                unsafe_allow_html=True,
-            )
-
-        # botões
-        b1, b2 = st.columns(2)
-        with b1:
-            if st.button("Ver detalhes", key=f"view_{product['id']}"):
-                st.session_state["selected_product_id"] = product["id"]
-                st.rerun()
-        with b2:
-            if st.button("🗑 Excluir", key=f"del_{product['id']}"):
-                st.session_state["confirm_delete_id"] = product["id"]
-                st.rerun()
+        # fecha as divs do modal
+        st.markdown("</div></div>", unsafe_allow_html=True)
