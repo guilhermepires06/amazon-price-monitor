@@ -195,9 +195,21 @@ with st.sidebar:
         .sidebar-footer {
             font-size: 0.8rem;
             color: #cbd5e1;
-            margin-top: 1.4rem;
             text-align: center;
-            opacity: 0.8;
+            opacity: 0.7;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(148,163,184,0.3);
+            margin-top: 1.5rem;
+        }
+
+        .sidebar-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .sidebar-grow {
+            flex-grow: 1;
         }
 
         .sidebar-link {
@@ -217,43 +229,37 @@ with st.sidebar:
             color: #a5b4fc;
         }
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
 
-    st.markdown('<div class="sidebar-title">📦 Produtos Monitorados</div>', unsafe_allow_html=True)
+        <div class="sidebar-container">
+            <div>
+                <div class="sidebar-title">📦 Produtos Monitorados</div>
+                <div class="sidebar-sub">
+                    Interface somente de leitura<br>Sistema hospedado no GitHub
+                </div>
 
-    st.markdown(
-        '<div class="sidebar-sub">Interface somente de leitura<br>Sistema hospedado no GitHub</div>',
-        unsafe_allow_html=True,
-    )
+                <div class="sidebar-box">
+                    <a class="sidebar-link" href="https://github.com/guilhermepires06/amazon-price-monitor" target="_blank">
+                        🔗 Repositório no GitHub
+                    </a>
+                </div>
 
-    st.markdown(
-        """
-        <div class="sidebar-box">
-            <a class="sidebar-link" href="https://github.com/guilhermepires06/amazon-price-monitor" target="_blank">
-                🔗 Repositório no GitHub
-            </a>
+                <div class="sidebar-box sidebar-dev">
+                    <div>Sistema desenvolvido por:</div>
+                    <div class="dev-name">🧠 Eduardo Feres</div>
+                    <div class="dev-name">👨‍💻 Guilherme Pires</div>
+                </div>
+            </div>
+
+            <div class="sidebar-grow"></div>
+
+            <div class="sidebar-footer">
+                © 2025 - Amazon Price Monitor
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    st.markdown(
-        """
-        <div class="sidebar-box sidebar-dev">
-            <div>Sistema desenvolvido por:</div>
-            <div class="dev-name">Eduardo Feres</div>
-            <div class="dev-name">Guilherme Pires</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        '<div class="sidebar-footer">© 2025 - Amazon Price Monitor</div>',
-        unsafe_allow_html=True,
-    )
 
 # =============================================================================
 # CONTEÚDO PRINCIPAL
