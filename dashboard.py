@@ -11,7 +11,7 @@ import requests
 import streamlit as st
 from bs4 import BeautifulSoup
 
-from utils import extract_price  # converte texto de preço em float
+from utils import extract_price 
 
 # =============================================================================
 # CONFIG BÁSICA
@@ -19,10 +19,8 @@ from utils import extract_price  # converte texto de preço em float
 
 DB_NAME = "scraping.db"
 
-# 🔥 COLOQUE AQUI A URL RAW DO SEU ARQUIVO scraping.db NO GITHUB
-# Exemplo:
-# GITHUB_DB_URL = "https://raw.githubusercontent.com/seu-usuario/seu-repo/main/scraping.db"
-GITHUB_DB_URL = "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"  # <-- ALTERE AQUI
+# URL RAW do banco no GitHub
+GITHUB_DB_URL = "https://raw.githubusercontent.com/guilhermepires06/amazon-price-monitor/main/scraping.db"
 
 
 HEADERS = {
@@ -52,8 +50,6 @@ def ensure_schema():
     conn.close()
 
 
-ensure_schema()
-
 # =============================================================================
 # SINCRONIZAÇÃO COM GITHUB
 # =============================================================================
@@ -63,8 +59,9 @@ def sync_db_from_github():
     """
     Baixa o scraping.db diretamente do GitHub (URL RAW) e sobrescreve o arquivo local.
 
-    Isso garante que os dados usados no gráfico sejam sempre a versão
-    mais recente gerada pelo GitHub Actions.
+    IMPORTANTE:
+    - Isso vai APAGAR alterações locais (produtos adicionados/removidos localmente).
+    - Depois de baixar, chamamos ensure_schema() para garantir a coluna image_url.
     """
     if not GITHUB_DB_URL:
         # URL não configurada, mantém banco local
@@ -75,13 +72,19 @@ def sync_db_from_github():
         resp.raise_for_status()
         with open(DB_NAME, "wb") as f:
             f.write(resp.content)
-        # st.info("Banco atualizado a partir do GitHub.")  # opcional
+
+        # garante que a coluna image_url exista no banco recém-baixado
+        ensure_schema()
+
+        print("[sync_db_from_github] Banco atualizado a partir do GitHub.")
     except Exception as e:
-        # Se der erro, usa o banco local e apenas avisa no log/console
         print(f"[sync_db_from_github] Erro ao baixar banco do GitHub: {e}")
         # Opcional: mostrar aviso na interface
         # st.warning("Não foi possível atualizar o banco a partir do GitHub. Usando versão local.")
 
+
+# Garante schema no banco local inicial
+ensure_schema()
 
 # =============================================================================
 # CACHE – HTML
@@ -104,11 +107,11 @@ def get_data():
     """
     Lê products e prices do banco.
 
-    Antes de ler, força uma sincronização com o arquivo do GitHub
-    (se GITHUB_DB_URL estiver configurada).
+    ATENÇÃO:
+    - NÃO sincronizamos mais automaticamente com o GitHub aqui.
+    - Senão, toda vez que o app recarrega, ele sobrescreve o banco local,
+      apagando inclusões/remoções feitas via interface.
     """
-    sync_db_from_github()
-
     conn = sqlite3.connect(DB_NAME)
     df_products = pd.read_sql_query("SELECT * FROM products", conn)
     df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
@@ -389,6 +392,17 @@ with st.sidebar:
         "O sistema tentará buscar automaticamente o título e a imagem."
     )
 
+    # Botão para sincronizar do GitHub manualmente
+    if st.button("🔄 Atualizar banco a partir do GitHub"):
+        sync_db_from_github()
+        st.success(
+            "Banco atualizado a partir do GitHub. "
+            "Atenção: alterações locais foram sobrescritas."
+        )
+        st.rerun()
+
+    st.markdown("---")
+
     new_url = st.text_input("URL do produto na Amazon")
     new_name = st.text_input("Nome do produto (opcional)")
 
@@ -423,8 +437,9 @@ with st.sidebar:
 
     st.markdown("---")
     st.caption(
-        "Este painel lê o banco **`scraping.db`**, "
-        "atualizado automaticamente pelo GitHub Actions."
+        "Este painel lê o banco **`scraping.db`**.\n\n"
+        "Use o botão acima para baixar a versão atualizada do GitHub "
+        "(isso sobrescreve alterações locais)."
     )
 
 # =============================================================================
