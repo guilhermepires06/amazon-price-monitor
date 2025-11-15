@@ -454,18 +454,19 @@ st.markdown(
         padding: 1.5rem;
     }
 
-    .detail-modal-card {
-        position: relative;
-        max-width: 680px;      /* bem menor */
-        width: 100%;
-        max-height: 70vh;      /* mais baixa */
-        overflow-y: auto;
-        padding: 1rem 1.2rem;
-        border-radius: 0.9rem;
-        background: radial-gradient(circle at top left, #020617, #020617 45%, #020617 100%);
-        border: 1px solid rgba(148,163,184,0.6);
-        box-shadow: 0 18px 55px rgba(15,23,42,1);
-    }
+  .detail-modal-card {
+    position: relative;
+    max-width: 480px !important;   /* bem menor */
+    width: 100%;
+    max-height: 60vh !important;   /* altura reduzida */
+    overflow-y: auto;
+    padding: 0.8rem 1rem;
+    border-radius: 0.75rem;
+    background: radial-gradient(circle at top left, #020617, #020617 45%, #020617 100%);
+    border: 1px solid rgba(148,163,184,0.6);
+    box-shadow: 0 15px 45px rgba(15,23,42,1);
+}
+
     .detail-modal-card::before {
         content: "";
         position: absolute;
@@ -741,7 +742,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
         if df_prod.empty:
             st.info("Sem histórico de preços para este produto ainda.")
         else:
-            fig, ax = plt.subplots(figsize=(5, 3))  # gráfico menor para caber no modal
+            fig, ax = plt.subplots(figsize=(3.8, 2.4))  # gráfico realmente pequeno
             sns.lineplot(data=df_prod, x="date_local", y="price", marker="o", ax=ax)
             ax.set_xlabel("Data/Hora (BR)")
             ax.set_ylabel("Preço (R$)")
