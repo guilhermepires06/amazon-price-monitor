@@ -319,7 +319,7 @@ st.markdown(
         opacity: 0.7;
     }
 
-    /* PILL DE ÚLTIMA ATUALIZAÇÃO -------------------------------------------
+    /* PILL DE ÚLTIMA ATUALIZAÇÃO -------------------------------------------*/
     .last-update-pill {
         padding: 0.35rem 0.9rem;
         border-radius: 999px;
@@ -330,7 +330,7 @@ st.markdown(
         gap: 0.35rem;
         align-items: center;
         justify-content: flex-end;
-        white-space: nowrap; */
+        white-space: nowrap; 
     }
     .last-update-pill strong {
         color: #e5e7eb;
@@ -573,18 +573,7 @@ with header_col1:
         unsafe_allow_html=True,
     )
 
-with header_col2:
-    st.markdown(
-        f"""
-        <div style="display:flex; justify-content:flex-end; margin-top:0.3rem;">
-            <div class="last-update-pill">
-                <span>🕒 Última atualização:</span>
-                <strong>{last_str}</strong>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+
 
 if df_products.empty:
     st.warning("Nenhum produto cadastrado. Adicione um produto na barra lateral.")
