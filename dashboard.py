@@ -470,27 +470,24 @@ st.markdown(
     }
 
     /* CARD DE DETALHES – AGORA MAIS LARGO --------------------------------- */
-    .detail-card-flag {
-        display: none;
-    }
+  /* ========= CARTÃO DO MODAL (TAMANHO CONFORTÁVEL) ========= */
+.detail-modal-card {
+    /* REMOVIDO: transform: scale(0.20);  */
+    /* REMOVIDO: transform-origin: top center; */
 
-    div[data-testid="stVerticalBlock"]:has(.detail-card-flag) {
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        justify-content: flex-start;
-        gap: 0.45rem;
-        background: radial-gradient(circle at top left, #020617, #020617 40%, #020617 100%);
-        border-radius: 1rem;
-        border: 1px solid rgba(148,163,184,0.6);
-        box-shadow: 0 14px 38px rgba(15,23,42,0.95);
-        padding: 0.9rem 1rem 1.1rem 1rem;
+    width: 900px;                     /* mais largo */
+    max-width: 900px !important;      /* garante largura máxima */
 
-        max-width: 720px;      /* ← AQUI: card mais largo para não espremer */
-        width: 100%;
-        margin: 0 auto 1.5rem auto;
-        overflow: hidden;
-    }
+    background: #020617;
+    border-radius: 1rem;
+    border: 1px solid rgba(148,163,184,0.55);
+    box-shadow: 0 16px 40px rgba(0,0,0,0.85);
+
+    padding: 1.1rem 1.4rem;
+    max-height: 650px;
+    overflow-y: auto;
+}
+
 
     </style>
     """,
