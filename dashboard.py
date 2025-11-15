@@ -575,11 +575,6 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    st.markdown("---")
-    st.caption(
-        "Este painel lê o banco **`scraping.db`**, "
-        "atualizado automaticamente pelo GitHub Actions."
-    )
     st.markdown("</div>", unsafe_allow_html=True)
 
 # =============================================================================
