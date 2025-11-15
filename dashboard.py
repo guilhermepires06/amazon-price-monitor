@@ -70,7 +70,7 @@ def get_data():
     if "date" in df_prices.columns:
         df_prices["date"] = pd.to_datetime(df_prices["date"])
         df_prices = df_prices.sort_values("date")
-        # corrigido fuso (antes +1h) -> agora -4h
+        # corrigindo fuso (antes ficava +1h)
         df_prices["date_local"] = df_prices["date"] - pd.Timedelta(hours=4)
     else:
         df_prices["date_local"] = pd.NaT
@@ -336,12 +336,11 @@ st.markdown(
         color: #e5e7eb;
     }
 
-    /* CARD DOS PRODUTOS (quadrado azul) ------------------------------------ */
+    /* CARDS DE PRODUTO ------------------------------------------------------ */
     .product-card-flag {
         display: none;
     }
 
-    /* Container inteiro do card */
     div[data-testid="stVerticalBlock"]:has(.product-card-flag) {
         position: relative;
         display: flex;
@@ -440,36 +439,32 @@ st.markdown(
         margin-top: 0.45rem;
     }
 
-    /* MODAL DE DETALHES – BEM PEQUENO -------------------------------------- */
-    #detail-modal-flag { display: none; }
+    /* CARD DE DETALHES (MESMO TAMANHO DO CARD NORMAL) ---------------------- */
+    .detail-card-flag {
+        display: none;
+    }
 
-    div[data-testid="stVerticalBlock"]:has(#detail-modal-flag) {
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.55) !important;
-        z-index: 9999;
+    div[data-testid="stVerticalBlock"]:has(.detail-card-flag) {
+        position: relative;
         display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0;
+        flex-direction: column;
+        justify-content: flex-start;
+        gap: 0.5rem;
+        background: radial-gradient(circle at top left, #020617, #020617 40%, #020617 100%);
+        border-radius: 1rem;
+        border: 1px solid rgba(148,163,184,0.6);
+        box-shadow: 0 14px 38px rgba(15,23,42,0.95);
+        padding: 0.9rem 1rem 0.9rem 1rem;
+        min-height: 360px; /* um pouco maior pra caber gráfico */
+        overflow: hidden;
     }
-
-    .detail-modal-card {
-        position: relative;
-        max-width: 420px !important;
-        width: 100%;
-        max-height: 260px !important;
-        overflow-y: auto;
-        padding: 0.7rem 0.9rem;
-        border-radius: 0.75rem;
-        background: #020617;
-        border: 1px solid rgba(148,163,184,0.5);
-        box-shadow: 0 12px 35px rgba(0,0,0,0.9);
-    }
-
-    .detail-modal-inner {
-        position: relative;
-        z-index: 1;
+    div[data-testid="stVerticalBlock"]:has(.detail-card-flag)::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at top right, rgba(56,189,248,0.14), transparent 60%);
+        opacity: 0.9;
+        pointer-events: none;
     }
 
     .metric-badge {
@@ -604,6 +599,115 @@ if df_products.empty:
 sns.set_style("whitegrid")
 
 # ----------------------------------------------------------------------------- #
+# DETALHES (CARD CENTRAL DO TAMANHO DE UM CARD NORMAL)
+# ----------------------------------------------------------------------------- #
+
+selected_id = st.session_state.get("selected_product_id")
+
+if selected_id is not None and selected_id in df_products["id"].values:
+    product = df_products[df_products["id"] == selected_id].iloc[0]
+    df_prod = df_prices[df_prices["product_id"] == selected_id].copy()
+
+    st.markdown("### Detalhes do produto selecionado")
+
+    col_left, col_center, col_right = st.columns([1, 1, 1])
+    with col_center:
+        with st.container():
+            st.markdown('<div class="detail-card-flag"></div>', unsafe_allow_html=True)
+
+            top_cols = st.columns([5, 1])
+            with top_cols[0]:
+                st.markdown(f"**{product['name']}**")
+            with top_cols[1]:
+                if st.button("✕ Fechar", key="close_detail"):
+                    st.session_state["selected_product_id"] = None
+                    st.rerun()
+
+            img_col, info_col = st.columns([1, 1], gap="small")
+            with img_col:
+                img_url = product.get("image_url") or get_product_image(product["url"])
+                if img_url:
+                    st.image(img_url, width=160)
+                else:
+                    st.info("Sem imagem disponível.")
+            with info_col:
+                st.markdown(f"[Ver na Amazon]({product['url']})")
+
+                manual_img = st.text_input(
+                    "URL da imagem",
+                    value=product.get("image_url") or "",
+                    key=f"manual_img_{product['id']}",
+                )
+
+                save_col, del_col = st.columns(2)
+                with save_col:
+                    if st.button("Salvar imagem", key=f"save_img_{product['id']}"):
+                        if manual_img.strip():
+                            update_product_image(product["id"], manual_img.strip())
+                            st.success("Imagem atualizada.")
+                        else:
+                            update_product_image(product["id"], None)
+                            st.info("Imagem removida.")
+                        st.rerun()
+                with del_col:
+                    if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
+                        delete_product_from_db(product["id"])
+                        st.success("Produto removido.")
+                        st.session_state["selected_product_id"] = None
+                        st.rerun()
+
+            st.markdown("---")
+            st.write("**Histórico de preços**")
+
+            if df_prod.empty:
+                st.info("Sem histórico ainda.")
+            else:
+                fig, ax = plt.subplots(figsize=(4, 2.2))  # tamanho compatível com card
+                sns.lineplot(data=df_prod, x="date_local", y="price", marker="o", ax=ax)
+                ax.set_xlabel("Data/Hora", fontsize=8)
+                ax.set_ylabel("Preço (R$)", fontsize=8)
+                ax.tick_params(axis="both", labelsize=8)
+                ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m\n%H:%M"))
+                plt.tight_layout()
+                st.pyplot(fig)
+
+                df_valid = df_prod.dropna(subset=["price"])
+                if len(df_valid) >= 2:
+                    first_price = df_valid["price"].iloc[0]
+                    last_price = df_valid["price"].iloc[-1]
+                    max_price = df_valid["price"].max()
+                    min_price = df_valid["price"].min()
+                    diff_abs = last_price - first_price
+
+                    if diff_abs > 0:
+                        tendencia = "subiu"
+                        badge_class = "positive"
+                    elif diff_abs < 0:
+                        tendencia = "caiu"
+                        badge_class = "negative"
+                    else:
+                        tendencia = "estável"
+                        badge_class = "neutral"
+
+                    st.markdown(
+                        f"""
+                        <span class="metric-badge {badge_class}">
+                            Tendência: {tendencia}
+                        </span>
+                        <span class="metric-badge">
+                            Atual: R$ {last_price:.2f}
+                        </span>
+                        <span class="metric-badge">
+                            Mín: R$ {min_price:.2f}
+                        </span>
+                        <span class="metric-badge">
+                            Máx: R$ {max_price:.2f}
+                        </span>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+# ----------------------------------------------------------------------------- #
 # GRID DE CARDS – PRODUTOS MONITORADOS
 # ----------------------------------------------------------------------------- #
 
@@ -616,16 +720,13 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
 
     with col:
         with st.container():
-            # FLAG que marca este bloco como um card (CSS pega o container inteiro)
             st.markdown('<div class="product-card-flag"></div>', unsafe_allow_html=True)
 
-            # TÍTULO
             st.markdown(
                 f'<div class="product-title">{product["name"]}</div>',
                 unsafe_allow_html=True,
             )
 
-            # IMAGEM
             img_url = product.get("image_url")
             if not img_url:
                 img_url = get_product_image(product["url"])
@@ -640,7 +741,6 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                 )
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # PREÇO
             latest_price = get_latest_price(df_prices, product["id"])
             st.markdown('<div class="product-card-footer">', unsafe_allow_html=True)
             if latest_price is not None:
@@ -655,7 +755,6 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                 )
             st.markdown("</div>", unsafe_allow_html=True)
 
-            # BOTÕES – dentro do card azul
             st.markdown('<div class="product-actions-row">', unsafe_allow_html=True)
             b1, b2 = st.columns(2)
             with b1:
@@ -669,111 +768,3 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                         st.session_state["selected_product_id"] = None
                     st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
-
-# ----------------------------------------------------------------------------- #
-# MODAL FLUTUANTE DE DETALHES (BEM PEQUENO)
-# ----------------------------------------------------------------------------- #
-
-selected_id = st.session_state.get("selected_product_id")
-
-if selected_id is not None and selected_id in df_products["id"].values:
-    product = df_products[df_products["id"] == selected_id].iloc[0]
-    df_prod = df_prices[df_prices["product_id"] == selected_id].copy()
-
-    with st.container():
-        # Flag para o CSS transformar esse container em overlay full-screen
-        st.markdown('<div id="detail-modal-flag"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="detail-modal-card"><div class="detail-modal-inner">', unsafe_allow_html=True)
-
-        top_cols = st.columns([5, 1])
-        with top_cols[0]:
-            st.markdown(f"### {product['name']}")
-        with top_cols[1]:
-            if st.button("✕ Fechar", key="close_detail"):
-                st.session_state["selected_product_id"] = None
-                st.rerun()
-
-        st.write("**Produto**")
-        img_col, info_col = st.columns([1, 1], gap="small")
-        with img_col:
-            img_url = product.get("image_url") or get_product_image(product["url"])
-            if img_url:
-                st.image(img_url, width=120)   # imagem pequena
-            else:
-                st.info("Sem imagem disponível.")
-        with info_col:
-            st.markdown(f"[Ver na Amazon]({product['url']})")
-            manual_img = st.text_input(
-                "URL da imagem",
-                value=product.get("image_url") or "",
-                key=f"manual_img_{product['id']}",
-            )
-            save_col, del_col = st.columns(2)
-            with save_col:
-                if st.button("Salvar", key=f"save_img_{product['id']}"):
-                    if manual_img.strip():
-                        update_product_image(product["id"], manual_img.strip())
-                        st.success("Imagem atualizada.")
-                    else:
-                        update_product_image(product["id"], None)
-                        st.info("Imagem removida.")
-                    st.rerun()
-            with del_col:
-                if st.button("🗑 Excluir", key=f"del_prod_detail_{product['id']}"):
-                    delete_product_from_db(product["id"])
-                    st.success("Produto removido.")
-                    st.session_state["selected_product_id"] = None
-                    st.rerun()
-
-        st.markdown("---")
-        st.write("**Histórico de Preços**")
-
-        if df_prod.empty:
-            st.info("Sem histórico ainda.")
-        else:
-            # gráfico realmente pequeno
-            fig, ax = plt.subplots(figsize=(2.2, 1.3))
-            sns.lineplot(data=df_prod, x="date_local", y="price", marker="o", ax=ax)
-            ax.set_xlabel("Data", fontsize=7)
-            ax.set_ylabel("Preço", fontsize=7)
-            ax.tick_params(axis="both", labelsize=7)
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m\n%H:%M"))
-            plt.tight_layout()
-            st.pyplot(fig)
-
-            df_valid = df_prod.dropna(subset=["price"])
-            if len(df_valid) >= 2:
-                first_price = df_valid["price"].iloc[0]
-                last_price = df_valid["price"].iloc[-1]
-                max_price = df_valid["price"].max()
-                min_price = df_valid["price"].min()
-                diff_abs = last_price - first_price
-                if diff_abs > 0:
-                    tendencia = "subiu"
-                    badge_class = "positive"
-                elif diff_abs < 0:
-                    tendencia = "caiu"
-                    badge_class = "negative"
-                else:
-                    tendencia = "estável"
-                    badge_class = "neutral"
-
-                st.markdown(
-                    f"""
-                    <span class="metric-badge {badge_class}">
-                        Tendência: {tendencia}
-                    </span>
-                    <span class="metric-badge">
-                        Atual: R$ {last_price:.2f}
-                    </span>
-                    <span class="metric-badge">
-                        Mín: R$ {min_price:.2f}
-                    </span>
-                    <span class="metric-badge">
-                        Máx: R$ {max_price:.2f}
-                    </span>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-        st.markdown("</div></div>", unsafe_allow_html=True)
