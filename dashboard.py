@@ -25,7 +25,7 @@ HEADERS = {
 }
 
 # =============================================================================
-# AJUSTE DE SCHEMA (image_url)
+# AJUSTE DE SCHEMA
 # =============================================================================
 
 
@@ -34,18 +34,14 @@ def ensure_schema():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    # ------------------------------------------------------------
     # 1) Garantir coluna image_url em products
-    # ------------------------------------------------------------
     try:
         cursor.execute("ALTER TABLE products ADD COLUMN image_url TEXT")
     except sqlite3.OperationalError:
         # coluna já existe
         pass
 
-    # ------------------------------------------------------------
     # 2) Garantir coluna old_price em prices
-    # ------------------------------------------------------------
     try:
         cursor.execute("ALTER TABLE prices ADD COLUMN old_price REAL")
     except sqlite3.OperationalError:
@@ -54,7 +50,6 @@ def ensure_schema():
 
     conn.commit()
     conn.close()
-
 
 
 ensure_schema()
@@ -223,12 +218,15 @@ def scrape_single_product(product_id: int, url: str):
     try:
         html = cached_html(url)
     except Exception:
+        # não conseguiu baixar a página, não grava nada
         return
 
     soup = BeautifulSoup(html, "html.parser")
 
+    # ---- preço atual ----
     price_whole = soup.find("span", class_="a-price-whole")
     price_fraction = soup.find("span", class_="a-price-fraction")
+
     if price_whole and price_fraction:
         full_price_str = f"{price_whole.text.strip()},{price_fraction.text.strip()}"
     elif price_whole:
@@ -238,21 +236,31 @@ def scrape_single_product(product_id: int, url: str):
 
     price = extract_price(full_price_str)
 
+    # ---- preço antigo (riscado), se existir ----
     old_price_tag = soup.find("span", class_="a-text-price")
     old_price_str = old_price_tag.get_text(strip=True) if old_price_tag else None
     old_price = extract_price(old_price_str)
 
+    # Se não achou preço válido, não tenta gravar para evitar IntegrityError
+    if price is None:
+        return
+
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute(
-        """
-        INSERT INTO prices (product_id, price, old_price)
-        VALUES (?, ?, ?)
-        """,
-        (product_id, price, old_price),
-    )
-    conn.commit()
-    conn.close()
+    try:
+        cursor.execute(
+            """
+            INSERT INTO prices (product_id, price, old_price)
+            VALUES (?, ?, ?)
+            """,
+            (product_id, price, old_price),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        # alguma constraint do banco falhou (NOT NULL, etc.) — ignora este registro
+        conn.rollback()
+    finally:
+        conn.close()
 
 
 # =============================================================================
@@ -486,39 +494,38 @@ st.markdown(
 
     /* CARD DE DETALHES ----------------------------------------------------- */
 
-.detail-card-flag {
-    display: none;
-}
+    .detail-card-flag {
+        display: none;
+    }
 
-div[data-testid="stVerticalBlock"]:has(.detail-card-flag) {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-start;
-    gap: 0.5rem;
+    div[data-testid="stVerticalBlock"]:has(.detail-card-flag) {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        gap: 0.5rem;
 
-    background: radial-gradient(circle at top left, #020617, #020617 40%, #020617 100%);
-    border-radius: 1.2rem;
-    border: 1px solid rgba(148,163,184,0.6);
-    box-shadow: 0 18px 45px rgba(15,23,42,0.95);
+        background: radial-gradient(circle at top left, #020617, #020617 40%, #020617 100%);
+        border-radius: 1.2rem;
+        border: 1px solid rgba(148,163,184,0.6);
+        box-shadow: 0 18px 45px rgba(15,23,42,0.95);
 
-    padding: 1.6rem 2rem 2rem 2rem;   /* 🔥 MAIS ESPAÇOS INTERNOS */
-    max-width: 1800px !important;    /* 🔥 AUMENTA O CARD */
-    width: 100% !important;
-    min-height: 620px;               /* 🔥 MAIS ALTO */
+        padding: 1.6rem 2rem 2rem 2rem;
+        max-width: 1800px !important;
+        width: 100% !important;
+        min-height: 620px;
 
-    overflow: hidden;
-}
+        overflow: hidden;
+    }
 
-div[data-testid="stVerticalBlock"]:has(.detail-card-flag)::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(circle at top right, rgba(56,189,248,0.20), transparent 60%);
-    opacity: 0.95;
-    pointer-events: none;
-}
-
+    div[data-testid="stVerticalBlock"]:has(.detail-card-flag)::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at top right, rgba(56,189,248,0.20), transparent 60%);
+        opacity: 0.95;
+        pointer-events: none;
+    }
 
     </style>
     """,
@@ -693,7 +700,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
                             st.info("Imagem removida.")
                         st.rerun()
                 with del_col:
-                    if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
+                    if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"]:
                         delete_product_from_db(product["id"])
                         st.success("Produto removido.")
                         st.session_state["selected_product_id"] = None
@@ -801,11 +808,11 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
             st.markdown('<div class="product-actions-row">', unsafe_allow_html=True)
             b1, b2 = st.columns(2)
             with b1:
-                if st.button("Ver detalhes", key=f"view_{product['id']}"):
+                if st.button("Ver detalhes", key=f"view_{product['id']}"]:
                     st.session_state["selected_product_id"] = product["id"]
                     st.rerun()
             with b2:
-                if st.button("🗑 Excluir", key=f"del_{product['id']}"):
+                if st.button("🗑 Excluir", key=f"del_{product['id']}"]:
                     delete_product_from_db(product["id"])
                     if st.session_state.get("selected_product_id") == product["id"]:
                         st.session_state["selected_product_id"] = None
