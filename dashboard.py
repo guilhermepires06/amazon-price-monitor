@@ -469,25 +469,36 @@ st.markdown(
         background: rgba(30,64,175,0.95);
     }
 
-    /* CARD DE DETALHES – AGORA MAIS LARGO --------------------------------- */
-  /* ========= CARTÃO DO MODAL (TAMANHO CONFORTÁVEL) ========= */
-.detail-modal-card {
-    /* REMOVIDO: transform: scale(0.20);  */
-    /* REMOVIDO: transform-origin: top center; */
+    /* CARD DE DETALHES ----------------------------------------------------- */
+    .detail-card-flag {
+        display: none;
+    }
 
-    width: 900px;                     /* mais largo */
-    max-width: 900px !important;      /* garante largura máxima */
+    div[data-testid="stVerticalBlock"]:has(.detail-card-flag) {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        gap: 0.5rem;
+        background: radial-gradient(circle at top left, #020617, #020617 40%, #020617 100%);
+        border-radius: 1rem;
+        border: 1px solid rgba(148,163,184,0.6);
+        box-shadow: 0 14px 38px rgba(15,23,42,0.95);
+        padding: 1rem 1.2rem 1.2rem 1.2rem;
+        max-width: 900px;
+        width: 100%;
+        min-height: 420px;
+        overflow: hidden;
+    }
 
-    background: #020617;
-    border-radius: 1rem;
-    border: 1px solid rgba(148,163,184,0.55);
-    box-shadow: 0 16px 40px rgba(0,0,0,0.85);
-
-    padding: 1.1rem 1.4rem;
-    max-height: 650px;
-    overflow-y: auto;
-}
-
+    div[data-testid="stVerticalBlock"]:has(.detail-card-flag)::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at top right, rgba(56,189,248,0.14), transparent 60%);
+        opacity: 0.9;
+        pointer-events: none;
+    }
 
     </style>
     """,
@@ -495,7 +506,7 @@ st.markdown(
 )
 
 # =============================================================================
-# SIDEBAR – CADASTRO
+# SIDEBAR – CADASTRO + ASSINATURA
 # =============================================================================
 
 with st.sidebar:
@@ -541,33 +552,35 @@ with st.sidebar:
             else:
                 st.warning(msg)
 
-st.markdown("</div>", unsafe_allow_html=True)
-st.markdown(
-    """
-    <div style="
-        margin-top: 1rem;
-        padding: 0.85rem 1rem;
-        border-radius: 10px;
-        background: rgba(30,41,59,0.55);
-        border: 1px solid rgba(148,163,184,0.25);
-        box-shadow: 0 0 12px rgba(0,0,0,0.25);
-        color: #cbd5e1;
-        font-size: 0.80rem;
-        text-align: center;
-        line-height: 1.25rem;
-    ">
-        <span style="opacity:0.75;">Sistema desenvolvido por:</span><br>
-        <strong style="color:#f8fafc;">Eduardo Feres</strong><br>
-        <strong style="color:#f8fafc;">Guilherme Pires</strong>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+    # Assinatura logo abaixo do botão
+    st.markdown(
+        """
+        <div style="
+            margin-top: 1rem;
+            padding: 0.85rem 1rem;
+            border-radius: 10px;
+            background: rgba(30,41,59,0.55);
+            border: 1px solid rgba(148,163,184,0.25);
+            box-shadow: 0 0 12px rgba(0,0,0,0.25);
+            color: #cbd5e1;
+            font-size: 0.80rem;
+            text-align: center;
+            line-height: 1.25rem;
+        ">
+            <span style="opacity:0.8;">🧑‍💻 Sistema desenvolvido por:</span><br>
+            <strong style="color:#f8fafc;">👨‍💻 Eduardo Feres</strong><br>
+            <strong style="color:#f8fafc;">🧙‍♂️ Guilherme Pires</strong>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-
-
-
-
+    st.markdown("---")
+    st.caption(
+        "Este painel lê o banco **`scraping.db`**, "
+        "atualizado automaticamente pelo GitHub Actions."
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # =============================================================================
 # CONTEÚDO PRINCIPAL
@@ -594,7 +607,18 @@ with header_col1:
         unsafe_allow_html=True,
     )
 
-
+with header_col2:
+    st.markdown(
+        f"""
+        <div style="display:flex; justify-content:flex-end; margin-top:0.3rem;">
+            <div class="last-update-pill">
+                <span>🕒 Última atualização:</span>
+                <strong>{last_str}</strong>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 if df_products.empty:
     st.warning("Nenhum produto cadastrado. Adicione um produto na barra lateral.")
