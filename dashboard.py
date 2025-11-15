@@ -319,7 +319,7 @@ st.markdown(
         opacity: 0.7;
     }
 
-    /* PILL DE ÚLTIMA ATUALIZAÇÃO ------------------------------------------- */
+    /* PILL DE ÚLTIMA ATUALIZAÇÃO -------------------------------------------
     .last-update-pill {
         padding: 0.35rem 0.9rem;
         border-radius: 999px;
@@ -330,7 +330,7 @@ st.markdown(
         gap: 0.35rem;
         align-items: center;
         justify-content: flex-end;
-        white-space: nowrap;
+        white-space: nowrap; */
     }
     .last-update-pill strong {
         color: #e5e7eb;
