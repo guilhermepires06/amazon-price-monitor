@@ -471,37 +471,42 @@ st.markdown(
 
     /* MODAL FLUTUANTE DE DETALHES ----------------------------------------- */
 
-    #detail-modal-flag {
-        display: none;
-    }
+  /* ========= MODAL FLUTUANTE (OVERLAY) ========= */
 
-    /* overlay ocupando a tela toda */
-    div[data-testid="stVerticalBlock"]:has(#detail-modal-flag) {
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.55) !important;
-        z-index: 9999;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0;
-    }
+#detail-modal-flag {
+    display: none;
+}
 
-    /* cartão interno do modal */
-    .detail-modal-card {
-        position: relative;
-        max-width: 750px !important;   /* largura maior (≈30% a mais) */
-        width: 100%;
-        max-height: 650px;
-        overflow-y: auto;
+/* Tela escurecida */
+div[data-testid="stVerticalBlock"]:has(#detail-modal-flag) {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55) !important;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
 
-        padding: 1.1rem 1.4rem 1.2rem 1.4rem;
+/* ========= CARTÃO DO MODAL (REDUZIDO 80%) ========= */
+.detail-modal-card {
+    transform: scale(0.20);           /* ← 80% menor */
+    transform-origin: top center;     /* reduz simétrico */
+    
+    width: 750px;                     /* mantém o layout original */
+    max-width: 750px !important;
 
-        background: #020617;
-        border-radius: 1rem;
-        border: 1px solid rgba(148,163,184,0.55);
-        box-shadow: 0 16px 40px rgba(0,0,0,0.85);
-    }
+    background: #020617;
+    border-radius: 1rem;
+    border: 1px solid rgba(148,163,184,0.55);
+    box-shadow: 0 16px 40px rgba(0,0,0,0.85);
+
+    padding: 1.1rem 1.4rem;
+    max-height: 650px;
+    overflow-y: auto;
+}
+
 
     </style>
     """,
