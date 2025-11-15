@@ -808,7 +808,7 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
             st.markdown('<div class="product-actions-row">', unsafe_allow_html=True)
             b1, b2 = st.columns(2)
             with b1:
-                if st.button("Ver detalhes", key=f"view_{product['id']}"]:
+                if st.button("Ver detalhes", key=f"view_{product['id']}"):
                     st.session_state["selected_product_id"] = product["id"]
                     st.rerun()
             with b2:
