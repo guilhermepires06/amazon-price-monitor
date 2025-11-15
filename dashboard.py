@@ -443,16 +443,17 @@ st.markdown(
     /* MODAL DE DETALHES – VERSÃO MENOR ------------------------------------- */
     #detail-modal-flag { display: none; }
 
-    div[data-testid="stVerticalBlock"]:has(#detail-modal-flag) {
-        position: fixed;
-        inset: 0;
-        background: rgba(15,23,42,0.78);
-        z-index: 9999;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 1.5rem;
-    }
+   div[data-testid="stVerticalBlock"]:has(#detail-modal-flag) {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55) !important;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
 
  .detail-modal-card {
     position: relative;
