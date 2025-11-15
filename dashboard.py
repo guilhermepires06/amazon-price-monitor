@@ -458,7 +458,7 @@ st.markdown(
 
     /* --- O QUE FOI ALTERADO --- */
     max-width: 9550px !important;    /* 30% mais largo */
-    width: 150%;
+    width: 120%;
     min-height: 420px;              /* pouquinho mais alto p/ gráfico */
     /* -------------------------- */
 
