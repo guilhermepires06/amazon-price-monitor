@@ -700,7 +700,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
                             st.info("Imagem removida.")
                         st.rerun()
                 with del_col:
-                    if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"]:
+                   if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
                         delete_product_from_db(product["id"])
                         st.success("Produto removido.")
                         st.session_state["selected_product_id"] = None
