@@ -457,8 +457,8 @@ st.markdown(
     padding: 0.9rem 1rem 1.2rem 1rem;
 
     /* --- O QUE FOI ALTERADO --- */
-    max-width: 99150px !important;    /* 30% mais largo */
-    width: 100%;
+    max-width: 9150px !important;    /* 30% mais largo */
+    width: 200%;
     min-height: 420px;              /* pouquinho mais alto p/ gráfico */
     /* -------------------------- */
 
