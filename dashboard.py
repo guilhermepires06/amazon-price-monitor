@@ -30,16 +30,31 @@ HEADERS = {
 
 
 def ensure_schema():
-    """Garante que a tabela products tenha a coluna image_url."""
+    """Garante que todas as colunas necessárias existam no banco."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
+
+    # ------------------------------------------------------------
+    # 1) Garantir coluna image_url em products
+    # ------------------------------------------------------------
     try:
         cursor.execute("ALTER TABLE products ADD COLUMN image_url TEXT")
-        conn.commit()
     except sqlite3.OperationalError:
         # coluna já existe
         pass
+
+    # ------------------------------------------------------------
+    # 2) Garantir coluna old_price em prices
+    # ------------------------------------------------------------
+    try:
+        cursor.execute("ALTER TABLE prices ADD COLUMN old_price REAL")
+    except sqlite3.OperationalError:
+        # coluna já existe
+        pass
+
+    conn.commit()
     conn.close()
+
 
 
 ensure_schema()
