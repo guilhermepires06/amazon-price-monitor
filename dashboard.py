@@ -540,27 +540,29 @@ with st.sidebar:
                 st.rerun()
             else:
                 st.warning(msg)
+st.markdown("---")
 st.markdown(
     """
     <div style="
-        margin-top: 1rem;
-        padding: 0.7rem 1rem;
-        border-radius: 12px;
-        background: rgba(15,23,42,0.55);
+        margin-top: 0.4rem;
+        padding: 0.8rem 1rem;
+        border-radius: 10px;
+        background: rgba(30,41,59,0.55);
         border: 1px solid rgba(148,163,184,0.25);
         box-shadow: 0 0 12px rgba(0,0,0,0.25);
         color: #cbd5e1;
-        font-size: 0.82rem;
+        font-size: 0.78rem;
         text-align: center;
-        letter-spacing: 0.4px;
+        line-height: 1.3rem;
     ">
         <span style="opacity:0.75;">Sistema desenvolvido por:</span><br>
-        <strong style="color:#e5e7eb;">Eduardo Feres</strong><br>
-        <strong style="color:#e5e7eb;">Guilherme Pires</strong>
+        <strong style="color:#f1f5f9;">Eduardo Feres</strong><br>
+        <strong style="color:#f1f5f9;">Guilherme Pires</strong>
     </div>
     """,
-    unsafe_allow_html=True,
+    unsafe_allow_html=True
 )
+st.markdown("</div>", unsafe_allow_html=True)
 
 # =============================================================================
 # CONTEÚDO PRINCIPAL
