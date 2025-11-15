@@ -742,7 +742,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
         if df_prod.empty:
             st.info("Sem histórico de preços para este produto ainda.")
         else:
-            fig, ax = plt.subplots(figsize=(0.8, 0.4))  # gráfico realmente pequeno
+            fig, ax = plt.subplots(figsize=(3.8, 2.4))  # gráfico realmente pequeno
             sns.lineplot(data=df_prod, x="date_local", y="price", marker="o", ax=ax)
             ax.set_xlabel("Data/Hora (BR)")
             ax.set_ylabel("Preço (R$)")
