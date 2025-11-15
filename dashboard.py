@@ -70,7 +70,8 @@ def get_data():
     if "date" in df_prices.columns:
         df_prices["date"] = pd.to_datetime(df_prices["date"])
         df_prices = df_prices.sort_values("date")
-        df_prices["date_local"] = df_prices["date"] - pd.Timedelta(hours=3)
+        # AJUSTE DE FUSO – estava +1h, então tiro 4h em vez de 3
+        df_prices["date_local"] = df_prices["date"] - pd.Timedelta(hours=4)
     else:
         df_prices["date_local"] = pd.NaT
 
@@ -439,34 +440,32 @@ st.markdown(
         margin-top: 0.45rem;
     }
 
-    /* MODAL DE DETALHES ----------------------------------------------------- */
+    /* MODAL DE DETALHES – VERSÃO MENOR ------------------------------------- */
     #detail-modal-flag { display: none; }
 
     div[data-testid="stVerticalBlock"]:has(#detail-modal-flag) {
-    position: fixed;
-    inset: 0;
-    background: rgba(15,23,42,0.78); /* antes 0.88 → mais suave */
-    z-index: 9999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1.5rem; /* antes 2rem 3rem */
-}
+        position: fixed;
+        inset: 0;
+        background: rgba(15,23,42,0.78);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+    }
 
-
-   .detail-modal-card {
-    position: relative;
-    max-width: 750px;    /* antes era 1100px */
-    width: 100%;
-    max-height: 75vh;    /* antes 90vh */
-    overflow-y: auto;
-    padding: 1rem 1.2rem; /* antes 1.4rem 1.5rem */
-    border-radius: 0.9rem;
-    background: radial-gradient(circle at top left, #020617, #020617 45%, #020617 100%);
-    border: 1px solid rgba(148,163,184,0.6);
-    box-shadow: 0 18px 55px rgba(15,23,42,1);
-}
-
+    .detail-modal-card {
+        position: relative;
+        max-width: 680px;      /* bem menor */
+        width: 100%;
+        max-height: 70vh;      /* mais baixa */
+        overflow-y: auto;
+        padding: 1rem 1.2rem;
+        border-radius: 0.9rem;
+        background: radial-gradient(circle at top left, #020617, #020617 45%, #020617 100%);
+        border: 1px solid rgba(148,163,184,0.6);
+        box-shadow: 0 18px 55px rgba(15,23,42,1);
+    }
     .detail-modal-card::before {
         content: "";
         position: absolute;
@@ -678,7 +677,7 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
             st.markdown("</div>", unsafe_allow_html=True)
 
 # ----------------------------------------------------------------------------- #
-# MODAL FLUTUANTE DE DETALHES
+# MODAL FLUTUANTE DE DETALHES (MENOR)
 # ----------------------------------------------------------------------------- #
 
 selected_id = st.session_state.get("selected_product_id")
@@ -692,24 +691,24 @@ if selected_id is not None and selected_id in df_products["id"].values:
         st.markdown('<div id="detail-modal-flag"></div>', unsafe_allow_html=True)
         st.markdown('<div class="detail-modal-card"><div class="detail-modal-inner">', unsafe_allow_html=True)
 
-        top_cols = st.columns([6, 1])
+        top_cols = st.columns([5, 1])
         with top_cols[0]:
             st.markdown(f"### {product['name']}")
         with top_cols[1]:
-            # Botão de fechar no canto superior direito do card
             if st.button("✕ Fechar", key="close_detail"):
                 st.session_state["selected_product_id"] = None
                 st.rerun()
 
-        col_img, col_graph = st.columns([1, 2])
-
-        with col_img:
-            st.write("**Produto**")
+        # Layout mais compacto: imagem + info, depois gráfico embaixo ocupando toda a largura
+        st.write("**Produto**")
+        img_col, info_col = st.columns([1, 1])
+        with img_col:
             img_url = product.get("image_url") or get_product_image(product["url"])
             if img_url:
-                st.image(img_url, width=260)
+                st.image(img_url, width=220)
             else:
                 st.info("Sem imagem disponível.")
+        with info_col:
             st.markdown(f"[Ver na Amazon]({product['url']})")
 
             st.markdown("#### Ajustar imagem manualmente")
@@ -736,88 +735,88 @@ if selected_id is not None and selected_id in df_products["id"].values:
                     st.session_state["selected_product_id"] = None
                     st.rerun()
 
-        with col_graph:
-            st.write("**Histórico de Preços**")
+        st.markdown("---")
+        st.write("**Histórico de Preços**")
 
-            if df_prod.empty:
-                st.info("Sem histórico de preços para este produto ainda.")
-            else:
-                fig, ax = plt.subplots(figsize=(8, 3))
-                sns.lineplot(data=df_prod, x="date_local", y="price", marker="o", ax=ax)
-                ax.set_xlabel("Data/Hora (BR)")
-                ax.set_ylabel("Preço (R$)")
-                ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
-                plt.xticks(rotation=30)
-                st.pyplot(fig)
+        if df_prod.empty:
+            st.info("Sem histórico de preços para este produto ainda.")
+        else:
+            fig, ax = plt.subplots(figsize=(5, 3))  # gráfico menor para caber no modal
+            sns.lineplot(data=df_prod, x="date_local", y="price", marker="o", ax=ax)
+            ax.set_xlabel("Data/Hora (BR)")
+            ax.set_ylabel("Preço (R$)")
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m %H:%M"))
+            plt.xticks(rotation=30)
+            st.pyplot(fig)
 
-                st.markdown("### 📌 Insights")
-                df_prod_valid = df_prod.dropna(subset=["price"])
-                if len(df_prod_valid) >= 2:
-                    first_price = df_prod_valid["price"].iloc[0]
-                    last_price = df_prod_valid["price"].iloc[-1]
-                    max_price = df_prod_valid["price"].max()
-                    min_price = df_prod_valid["price"].min()
-                    mean_price = df_prod_valid["price"].mean()
+            st.markdown("### 📌 Insights")
+            df_prod_valid = df_prod.dropna(subset=["price"])
+            if len(df_prod_valid) >= 2:
+                first_price = df_prod_valid["price"].iloc[0]
+                last_price = df_prod_valid["price"].iloc[-1]
+                max_price = df_prod_valid["price"].max()
+                min_price = df_prod_valid["price"].min()
+                mean_price = df_prod_valid["price"].mean()
 
-                    diff_abs = last_price - first_price
-                    diff_percent = (diff_abs / first_price) * 100 if first_price != 0 else 0
+                diff_abs = last_price - first_price
+                diff_percent = (diff_abs / first_price) * 100 if first_price != 0 else 0
 
-                    if diff_abs > 0:
-                        tendencia = "subiu"
-                        badge_class = "positive"
-                    elif diff_abs < 0:
-                        tendencia = "caiu"
-                        badge_class = "negative"
-                    else:
-                        tendencia = "se manteve estável"
-                        badge_class = "neutral"
+                if diff_abs > 0:
+                    tendencia = "subiu"
+                    badge_class = "positive"
+                elif diff_abs < 0:
+                    tendencia = "caiu"
+                    badge_class = "negative"
+                else:
+                    tendencia = "se manteve estável"
+                    badge_class = "neutral"
 
-                    st.markdown(
-                        f"""
-                        <span class="metric-badge {badge_class}">
-                            Tendência: {tendencia}
-                        </span>
-                        <span class="metric-badge">
-                            Atual: R$ {last_price:.2f}
-                        </span>
-                        <span class="metric-badge">
-                            Mín: R$ {min_price:.2f}
-                        </span>
-                        <span class="metric-badge">
-                            Máx: R$ {max_price:.2f}
-                        </span>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                st.markdown(
+                    f"""
+                    <span class="metric-badge {badge_class}">
+                        Tendência: {tendencia}
+                    </span>
+                    <span class="metric-badge">
+                        Atual: R$ {last_price:.2f}
+                    </span>
+                    <span class="metric-badge">
+                        Mín: R$ {min_price:.2f}
+                    </span>
+                    <span class="metric-badge">
+                        Máx: R$ {max_price:.2f}
+                    </span>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
+                st.write(
+                    f"**1. Tendência geral:** o preço {tendencia} de "
+                    f"R$ {first_price:.2f} para R$ {last_price:.2f} "
+                    f"({diff_abs:+.2f} R$, {diff_percent:+.1f}%)."
+                )
+                st.write(
+                    f"**2. Faixa de variação:** mínimo registrado R$ {min_price:.2f}, "
+                    f"máximo R$ {max_price:.2f} e preço médio de R$ {mean_price:.2f}."
+                )
+                if last_price == min_price:
                     st.write(
-                        f"**1. Tendência geral:** o preço {tendencia} de "
-                        f"R$ {first_price:.2f} para R$ {last_price:.2f} "
-                        f"({diff_abs:+.2f} R$, {diff_percent:+.1f}%)."
+                        "**3. Momento de compra:** o preço atual é o mais baixo do histórico — "
+                        "excelente momento para considerar a compra."
                     )
+                elif last_price == max_price:
                     st.write(
-                        f"**2. Faixa de variação:** mínimo registrado R$ {min_price:.2f}, "
-                        f"máximo R$ {max_price:.2f} e preço médio de R$ {mean_price:.2f}."
+                        "**3. Momento de compra:** o preço atual está no topo histórico — "
+                        "pode valer a pena aguardar uma queda."
                     )
-                    if last_price == min_price:
-                        st.write(
-                            "**3. Momento de compra:** o preço atual é o mais baixo do histórico — "
-                            "excelente momento para considerar a compra."
-                        )
-                    elif last_price == max_price:
-                        st.write(
-                            "**3. Momento de compra:** o preço atual está no topo histórico — "
-                            "pode valer a pena aguardar uma queda."
-                        )
-                    else:
-                        st.write(
-                            "**3. Momento de compra:** o preço atual está dentro da faixa histórica, "
-                            "sem ser o mínimo nem o máximo."
-                        )
                 else:
                     st.write(
-                        "Ainda não há pontos suficientes no histórico para gerar análises detalhadas. "
-                        "Deixe o coletor rodando por mais tempo."
+                        "**3. Momento de compra:** o preço atual está dentro da faixa histórica, "
+                        "sem ser o mínimo nem o máximo."
                     )
+            else:
+                st.write(
+                    "Ainda não há pontos suficientes no histórico para gerar análises detalhadas. "
+                    "Deixe o coletor rodando por mais tempo."
+                )
 
         st.markdown("</div></div>", unsafe_allow_html=True)
