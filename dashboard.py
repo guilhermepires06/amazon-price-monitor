@@ -478,7 +478,7 @@ st.markdown(
     .metric-badge.negative { border-color: #ef4444; }
     .metric-badge.neutral  { border-color: #64748b; }
 
-    a { color: #38bdf8 !important; }
+    a { color: #38bdf8 !IMPORTANT; }
 
     .stButton>button {
         border-radius: 999px !important;
@@ -700,7 +700,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
                             st.info("Imagem removida.")
                         st.rerun()
                 with del_col:
-                   if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
+                    if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
                         delete_product_from_db(product["id"])
                         st.success("Produto removido.")
                         st.session_state["selected_product_id"] = None
@@ -747,7 +747,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
                         <span class="metric-badge">
                             Atual: R$ {last_price:.2f}
                         </span>
-                        <span class="metric-badge">
+                            <span class="metric-badge">
                             Mín: R$ {min_price:.2f}
                         </span>
                         <span class="metric-badge">
@@ -812,7 +812,7 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                     st.session_state["selected_product_id"] = product["id"]
                     st.rerun()
             with b2:
-                if st.button("🗑 Excluir", key=f"del_{product['id']}"]:
+                if st.button("🗑 Excluir", key=f"del_{product['id']}"):
                     delete_product_from_db(product["id"])
                     if st.session_state.get("selected_product_id") == product["id"]:
                         st.session_state["selected_product_id"] = None
