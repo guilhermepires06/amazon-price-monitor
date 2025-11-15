@@ -540,14 +540,27 @@ with st.sidebar:
                 st.rerun()
             else:
                 st.warning(msg)
-
-    st.markdown("---")
-    st.caption(
-        "Sistema desenvolvido por: "
-        "Eduardo Feres"
-	    "Guilherme Pires"
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
+st.markdown(
+    """
+    <div style="
+        margin-top: 1rem;
+        padding: 0.7rem 1rem;
+        border-radius: 12px;
+        background: rgba(15,23,42,0.55);
+        border: 1px solid rgba(148,163,184,0.25);
+        box-shadow: 0 0 12px rgba(0,0,0,0.25);
+        color: #cbd5e1;
+        font-size: 0.82rem;
+        text-align: center;
+        letter-spacing: 0.4px;
+    ">
+        <span style="opacity:0.75;">Sistema desenvolvido por:</span><br>
+        <strong style="color:#e5e7eb;">Eduardo Feres</strong><br>
+        <strong style="color:#e5e7eb;">Guilherme Pires</strong>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 # =============================================================================
 # CONTEÚDO PRINCIPAL
