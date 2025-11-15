@@ -469,44 +469,27 @@ st.markdown(
         background: rgba(30,64,175,0.95);
     }
 
-    /* MODAL FLUTUANTE DE DETALHES ----------------------------------------- */
+    /* CARD DE DETALHES (MESMO ESTILO, MENOR) ------------------------------ */
+    .detail-card-flag {
+        display: none;
+    }
 
-  /* ========= MODAL FLUTUANTE (OVERLAY) ========= */
-
-#detail-modal-flag {
-    display: none;
-}
-
-/* Tela escurecida */
-div[data-testid="stVerticalBlock"]:has(#detail-modal-flag) {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.55) !important;
-    z-index: 9999;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-}
-
-/* ========= CARTÃO DO MODAL (REDUZIDO 80%) ========= */
-.detail-modal-card {
-    transform: scale(0.20);           /* ← 80% menor */
-    transform-origin: top center;     /* reduz simétrico */
-    
-    width: 750px;                     /* mantém o layout original */
-    max-width: 750px !important;
-
-    background: #020617;
-    border-radius: 1rem;
-    border: 1px solid rgba(148,163,184,0.55);
-    box-shadow: 0 16px 40px rgba(0,0,0,0.85);
-
-    padding: 1.1rem 1.4rem;
-    max-height: 650px;
-    overflow-y: auto;
-}
-
+    div[data-testid="stVerticalBlock"]:has(.detail-card-flag) {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        gap: 0.45rem;
+        background: radial-gradient(circle at top left, #020617, #020617 40%, #020617 100%);
+        border-radius: 1rem;
+        border: 1px solid rgba(148,163,184,0.6);
+        box-shadow: 0 14px 38px rgba(15,23,42,0.95);
+        padding: 0.9rem 1rem 1.1rem 1rem;
+        max-width: 560px;         /* ~tamanho de 1 card */
+        width: 100%;
+        margin: 0 auto 1.5rem auto;
+        overflow: hidden;
+    }
 
     </style>
     """,
@@ -612,7 +595,7 @@ if df_products.empty:
 sns.set_style("whitegrid")
 
 # ----------------------------------------------------------------------------- #
-# MODAL DE DETALHES (FLUTUANTE)
+# CARD DE DETALHES – CENTRALIZADO E PEQUENO
 # ----------------------------------------------------------------------------- #
 
 selected_id = st.session_state.get("selected_product_id")
@@ -621,105 +604,105 @@ if selected_id is not None and selected_id in df_products["id"].values:
     product = df_products[df_products["id"] == selected_id].iloc[0]
     df_prod = df_prices[df_prices["product_id"] == selected_id].copy()
 
-    with st.container():
-        # flag para o overlay
-        st.markdown('<div id="detail-modal-flag"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="detail-modal-card">', unsafe_allow_html=True)
+    st.markdown("### Detalhes do produto selecionado")
 
-        top_cols = st.columns([5, 1])
-        with top_cols[0]:
-            st.markdown(f"**{product['name']}**")
-        with top_cols[1]:
-            if st.button("✕ Fechar", key="close_detail"):
-                st.session_state["selected_product_id"] = None
-                st.rerun()
+    _, center_col, _ = st.columns([1, 2, 1])
+    with center_col:
+        with st.container():
+            st.markdown('<div class="detail-card-flag"></div>', unsafe_allow_html=True)
 
-        img_col, info_col = st.columns([1, 1], gap="small")
-        with img_col:
-            img_url = product.get("image_url") or get_product_image(product["url"])
-            if img_url:
-                st.image(img_url, width=180)
-            else:
-                st.info("Sem imagem disponível.")
-        with info_col:
-            st.markdown(f"[Ver na Amazon]({product['url']})")
-
-            manual_img = st.text_input(
-                "URL da imagem",
-                value=product.get("image_url") or "",
-                key=f"manual_img_{product['id']}",
-            )
-
-            save_col, del_col = st.columns(2)
-            with save_col:
-                if st.button("Salvar imagem", key=f"save_img_{product['id']}"):
-                    if manual_img.strip():
-                        update_product_image(product["id"], manual_img.strip())
-                        st.success("Imagem atualizada.")
-                    else:
-                        update_product_image(product["id"], None)
-                        st.info("Imagem removida.")
-                    st.rerun()
-            with del_col:
-                if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
-                    delete_product_from_db(product["id"])
-                    st.success("Produto removido.")
+            top_cols = st.columns([5, 1])
+            with top_cols[0]:
+                st.markdown(f"**{product['name']}**")
+            with top_cols[1]:
+                if st.button("✕ Fechar", key="close_detail"):
                     st.session_state["selected_product_id"] = None
                     st.rerun()
 
-        st.markdown("---")
-        st.write("**Histórico de preços**")
-
-        if df_prod.empty:
-            st.info("Sem histórico ainda.")
-        else:
-            # 👇 AQUI FICOU BEM PEQUENO (≈10% do gigante)
-            fig, ax = plt.subplots(figsize=(3, 1.5))
-            sns.lineplot(data=df_prod, x="date_local", y="price", marker="o", ax=ax)
-            ax.set_xlabel("Data/Hora", fontsize=7)
-            ax.set_ylabel("Preço (R$)", fontsize=7)
-            ax.tick_params(axis="both", labelsize=7)
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m\n%H:%M"))
-            plt.tight_layout()
-            st.pyplot(fig)
-
-            df_valid = df_prod.dropna(subset=["price"])
-            if len(df_valid) >= 2:
-                first_price = df_valid["price"].iloc[0]
-                last_price = df_valid["price"].iloc[-1]
-                max_price = df_valid["price"].max()
-                min_price = df_valid["price"].min()
-                diff_abs = last_price - first_price
-
-                if diff_abs > 0:
-                    tendencia = "subiu"
-                    badge_class = "positive"
-                elif diff_abs < 0:
-                    tendencia = "caiu"
-                    badge_class = "negative"
+            img_col, info_col = st.columns([1, 1])
+            with img_col:
+                img_url = product.get("image_url") or get_product_image(product["url"])
+                if img_url:
+                    st.image(img_url, width=170)
                 else:
-                    tendencia = "estável"
-                    badge_class = "neutral"
+                    st.info("Sem imagem disponível.")
+            with info_col:
+                st.markdown(f"[Ver na Amazon]({product['url']})")
 
-                st.markdown(
-                    f"""
-                    <span class="metric-badge {badge_class}">
-                        Tendência: {tendencia}
-                    </span>
-                    <span class="metric-badge">
-                        Atual: R$ {last_price:.2f}
-                    </span>
-                    <span class="metric-badge">
-                        Mín: R$ {min_price:.2f}
-                    </span>
-                    <span class="metric-badge">
-                        Máx: R$ {max_price:.2f}
-                    </span>
-                    """,
-                    unsafe_allow_html=True,
+                manual_img = st.text_input(
+                    "URL da imagem",
+                    value=product.get("image_url") or "",
+                    key=f"manual_img_{product['id']}",
                 )
 
-        st.markdown("</div>", unsafe_allow_html=True)
+                save_col, del_col = st.columns(2)
+                with save_col:
+                    if st.button("Salvar imagem", key=f"save_img_{product['id']}"):
+                        if manual_img.strip():
+                            update_product_image(product["id"], manual_img.strip())
+                            st.success("Imagem atualizada.")
+                        else:
+                            update_product_image(product["id"], None)
+                            st.info("Imagem removida.")
+                        st.rerun()
+                with del_col:
+                    if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
+                        delete_product_from_db(product["id"])
+                        st.success("Produto removido.")
+                        st.session_state["selected_product_id"] = None
+                        st.rerun()
+
+            st.markdown("---")
+            st.write("**Histórico de preços**")
+
+            if df_prod.empty:
+                st.info("Sem histórico ainda.")
+            else:
+                # gráfico pequeno, do tamanho do card
+                fig, ax = plt.subplots(figsize=(4, 2))
+                sns.lineplot(data=df_prod, x="date_local", y="price", marker="o", ax=ax)
+                ax.set_xlabel("Data/Hora", fontsize=7)
+                ax.set_ylabel("Preço (R$)", fontsize=7)
+                ax.tick_params(axis="both", labelsize=7)
+                ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m\n%H:%M"))
+                plt.tight_layout()
+                st.pyplot(fig)
+
+                df_valid = df_prod.dropna(subset=["price"])
+                if len(df_valid) >= 2:
+                    first_price = df_valid["price"].iloc[0]
+                    last_price = df_valid["price"].iloc[-1]
+                    max_price = df_valid["price"].max()
+                    min_price = df_valid["price"].min()
+                    diff_abs = last_price - first_price
+
+                    if diff_abs > 0:
+                        tendencia = "subiu"
+                        badge_class = "positive"
+                    elif diff_abs < 0:
+                        tendencia = "caiu"
+                        badge_class = "negative"
+                    else:
+                        tendencia = "estável"
+                        badge_class = "neutral"
+
+                    st.markdown(
+                        f"""
+                        <span class="metric-badge {badge_class}">
+                            Tendência: {tendencia}
+                        </span>
+                        <span class="metric-badge">
+                            Atual: R$ {last_price:.2f}
+                        </span>
+                        <span class="metric-badge">
+                            Mín: R$ {min_price:.2f}
+                        </span>
+                        <span class="metric-badge">
+                            Máx: R$ {max_price:.2f}
+                        </span>
+                        """,
+                        unsafe_allow_html=True,
+                    )
 
 # ----------------------------------------------------------------------------- #
 # GRID DE CARDS – PRODUTOS MONITORADOS
