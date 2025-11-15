@@ -470,7 +470,7 @@ st.markdown(
     }
 
     /* CARD DE DETALHES ----------------------------------------------------- */
-/* CARD DE DETALHES ----------------------------------------------------- */
+
 .detail-card-flag {
     display: none;
 }
@@ -488,9 +488,9 @@ div[data-testid="stVerticalBlock"]:has(.detail-card-flag) {
     box-shadow: 0 18px 45px rgba(15,23,42,0.95);
 
     padding: 1.6rem 2rem 2rem 2rem;   /* 🔥 MAIS ESPAÇOS INTERNOS */
-    max-width: 1200px !important;    /* 🔥 AUMENTA O CARD */
+    max-width: 1800px !important;    /* 🔥 AUMENTA O CARD */
     width: 100% !important;
-    min-height: 520px;               /* 🔥 MAIS ALTO */
+    min-height: 620px;               /* 🔥 MAIS ALTO */
 
     overflow: hidden;
 }
