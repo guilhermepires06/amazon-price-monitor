@@ -444,7 +444,7 @@ st.markdown(
         display: none;
     }
 
-    div[data-testid="stVerticalBlock"]:has(.detail-card-flag) {
+div[data-testid="stVerticalBlock"]:has(.detail-card-flag) {
     position: relative;
     display: flex;
     flex-direction: column;
@@ -456,11 +456,11 @@ st.markdown(
     box-shadow: 0 14px 38px rgba(15,23,42,0.95);
     padding: 0.9rem 1rem 1.2rem 1rem;
 
-    /* --- O QUE FOI ALTERADO --- */
-    max-width: 9550px !important;    /* 30% mais largo */
+    /* --- LARGURA FINAL AJUSTADA --- */
+    max-width: 620px !important;   /* este é o tamanho ideal */
     width: 100%;
-    min-height: 420px;              /* pouquinho mais alto p/ gráfico */
-    /* -------------------------- */
+    min-height: 420px;
+    /* -------------------------------- */
 
     overflow: hidden;
 }
