@@ -543,8 +543,9 @@ with st.sidebar:
 
     st.markdown("---")
     st.caption(
-        "Este painel lê o banco **`scraping.db`**, "
-        "atualizado automaticamente pelo GitHub Actions."
+        "Sistema desenvolvido por: "
+        "Eduardo Feres"
+	    "Guilherme Pires"
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
