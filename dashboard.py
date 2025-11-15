@@ -469,7 +469,7 @@ st.markdown(
         background: rgba(30,64,175,0.95);
     }
 
-    /* CARD DE DETALHES (MESMO ESTILO, MENOR) ------------------------------ */
+    /* CARD DE DETALHES – AGORA MAIS LARGO --------------------------------- */
     .detail-card-flag {
         display: none;
     }
@@ -485,7 +485,8 @@ st.markdown(
         border: 1px solid rgba(148,163,184,0.6);
         box-shadow: 0 14px 38px rgba(15,23,42,0.95);
         padding: 0.9rem 1rem 1.1rem 1rem;
-        max-width: 560px;         /* ~tamanho de 1 card */
+
+        max-width: 720px;      /* ← AQUI: card mais largo para não espremer */
         width: 100%;
         margin: 0 auto 1.5rem auto;
         overflow: hidden;
@@ -595,7 +596,7 @@ if df_products.empty:
 sns.set_style("whitegrid")
 
 # ----------------------------------------------------------------------------- #
-# CARD DE DETALHES – CENTRALIZADO E PEQUENO
+# CARD DE DETALHES – CENTRALIZADO
 # ----------------------------------------------------------------------------- #
 
 selected_id = st.session_state.get("selected_product_id")
@@ -658,7 +659,6 @@ if selected_id is not None and selected_id in df_products["id"].values:
             if df_prod.empty:
                 st.info("Sem histórico ainda.")
             else:
-                # gráfico pequeno, do tamanho do card
                 fig, ax = plt.subplots(figsize=(4, 2))
                 sns.lineplot(data=df_prod, x="date_local", y="price", marker="o", ax=ax)
                 ax.set_xlabel("Data/Hora", fontsize=7)
