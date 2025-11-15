@@ -668,11 +668,12 @@ if selected_id is not None and selected_id in df_products["id"].values:
         if df_prod.empty:
             st.info("Sem histórico ainda.")
         else:
-            fig, ax = plt.subplots(figsize=(5, 2.5))  # cabe certinho dentro do modal
+            # 👇 AQUI FICOU BEM PEQUENO (≈10% do gigante)
+            fig, ax = plt.subplots(figsize=(3, 1.5))
             sns.lineplot(data=df_prod, x="date_local", y="price", marker="o", ax=ax)
-            ax.set_xlabel("Data/Hora", fontsize=8)
-            ax.set_ylabel("Preço (R$)", fontsize=8)
-            ax.tick_params(axis="both", labelsize=8)
+            ax.set_xlabel("Data/Hora", fontsize=7)
+            ax.set_ylabel("Preço (R$)", fontsize=7)
+            ax.tick_params(axis="both", labelsize=7)
             ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m\n%H:%M"))
             plt.tight_layout()
             st.pyplot(fig)
