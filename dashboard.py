@@ -467,14 +467,18 @@ st.markdown(
     box-shadow: 0 15px 45px rgba(15,23,42,1);
 }
 
-    .detail-modal-card::before {
-        content: "";
-        position: absolute;
-        inset: -40%;
-        background: radial-gradient(circle at top right, rgba(56,189,248,0.12), transparent 65%);
-        opacity: 0.9;
-        pointer-events: none;
-    }
+    .detail-modal-card {
+    position: relative;
+    max-width: 650px !important;   /* Largura = 2 cards */
+    width: 100%;
+    max-height: 360px !important;  /* Altura = 2 cards empilhados */
+    overflow-y: auto;
+    padding: 0.8rem 1rem;
+    border-radius: 0.8rem;
+    background: #020617;
+    border: 1px solid rgba(148,163,184,0.6);
+    box-shadow: 0 15px 45px rgba(0,0,0,0.85);
+}
     .detail-modal-inner {
         position: relative;
         z-index: 1;
