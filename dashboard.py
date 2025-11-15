@@ -470,35 +470,40 @@ st.markdown(
     }
 
     /* CARD DE DETALHES ----------------------------------------------------- */
-    .detail-card-flag {
-        display: none;
-    }
+/* CARD DE DETALHES ----------------------------------------------------- */
+.detail-card-flag {
+    display: none;
+}
 
-    div[data-testid="stVerticalBlock"]:has(.detail-card-flag) {
-        position: relative;
-        display: flex;
-        flex-direction: column;
-        justify-content: flex-start;
-        gap: 0.5rem;
-        background: radial-gradient(circle at top left, #020617, #020617 40%, #020617 100%);
-        border-radius: 1rem;
-        border: 1px solid rgba(148,163,184,0.6);
-        box-shadow: 0 14px 38px rgba(15,23,42,0.95);
-        padding: 1rem 1.2rem 1.2rem 1.2rem;
-        max-width: 900px;
-        width: 100%;
-        min-height: 420px;
-        overflow: hidden;
-    }
+div[data-testid="stVerticalBlock"]:has(.detail-card-flag) {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 0.5rem;
 
-    div[data-testid="stVerticalBlock"]:has(.detail-card-flag)::before {
-        content: "";
-        position: absolute;
-        inset: 0;
-        background: radial-gradient(circle at top right, rgba(56,189,248,0.14), transparent 60%);
-        opacity: 0.9;
-        pointer-events: none;
-    }
+    background: radial-gradient(circle at top left, #020617, #020617 40%, #020617 100%);
+    border-radius: 1.2rem;
+    border: 1px solid rgba(148,163,184,0.6);
+    box-shadow: 0 18px 45px rgba(15,23,42,0.95);
+
+    padding: 1.6rem 2rem 2rem 2rem;   /* 🔥 MAIS ESPAÇOS INTERNOS */
+    max-width: 1200px !important;    /* 🔥 AUMENTA O CARD */
+    width: 100% !important;
+    min-height: 520px;               /* 🔥 MAIS ALTO */
+
+    overflow: hidden;
+}
+
+div[data-testid="stVerticalBlock"]:has(.detail-card-flag)::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at top right, rgba(56,189,248,0.20), transparent 60%);
+    opacity: 0.95;
+    pointer-events: none;
+}
+
 
     </style>
     """,
