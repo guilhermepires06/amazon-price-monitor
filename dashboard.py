@@ -454,35 +454,19 @@ st.markdown(
         padding: 1.5rem;
     }
 
-  .detail-modal-card {
+ .detail-modal-card {
     position: relative;
-    max-width: 480px !important;   /* bem menor */
+    max-width: 400px !important;     /* largura bem pequena */
     width: 100%;
-    max-height: 60vh !important;   /* altura reduzida */
+    max-height: 300px !important;    /* altura super compacta */
     overflow-y: auto;
-    padding: 0.8rem 1rem;
-    border-radius: 0.75rem;
-    background: radial-gradient(circle at top left, #020617, #020617 45%, #020617 100%);
-    border: 1px solid rgba(148,163,184,0.6);
-    box-shadow: 0 15px 45px rgba(15,23,42,1);
+    padding: 0.6rem 0.8rem;
+    border-radius: 0.7rem;
+    background: #020617;
+    border: 1px solid rgba(148,163,184,0.5);
+    box-shadow: 0 12px 35px rgba(0,0,0,0.85);
 }
 
-    .detail-modal-card {
-    position: relative;
-    max-width: 650px !important;   /* Largura = 2 cards */
-    width: 100%;
-    max-height: 360px !important;  /* Altura = 2 cards empilhados */
-    overflow-y: auto;
-    padding: 0.8rem 1rem;
-    border-radius: 0.8rem;
-    background: #020617;
-    border: 1px solid rgba(148,163,184,0.6);
-    box-shadow: 0 15px 45px rgba(0,0,0,0.85);
-}
-    .detail-modal-inner {
-        position: relative;
-        z-index: 1;
-    }
 
     .metric-badge {
         display: inline-block;
