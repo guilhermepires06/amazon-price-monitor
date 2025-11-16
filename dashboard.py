@@ -30,7 +30,12 @@ HEADERS = {
 # CONFIG GITHUB – ENVIO DO scraping.db
 # =============================================================================
 
-GITHUB_TOKEN = "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"
+# ⚠️ COLOQUE AQUI SEU TOKEN DE VERDADE (NÃO COMMITAR ISSO NO GIT!)
+# Ou melhor ainda: use st.secrets["GITHUB_TOKEN"]
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")  # ou troque por string literal local
+# Exemplo local (NÃO SUBA ISSO PARA O GIT):
+# GITHUB_TOKEN = "github_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
 GITHUB_REPO = "guilhermepires06/amazon-price-monitor"
 GITHUB_FILE_PATH = "scraping.db"
 GITHUB_BRANCH = "main"
@@ -40,20 +45,24 @@ def upload_db_to_github(commit_message: str = "Atualiza scraping.db via app"):
     """
     Envia o arquivo scraping.db para o GitHub, sobrescrevendo o existente.
 
-    Usa a rota:
-      PUT /repos/{owner}/{repo}/contents/{path}
+    PUT /repos/{owner}/{repo}/contents/{path}
     """
-    if not GITHUB_TOKEN or GITHUB_TOKEN == "SEU_TOKEN_GITHUB_AQUI":
-        # Token não configurado: não faz nada
+    if not GITHUB_TOKEN:
+        st.sidebar.warning("⚠️ GITHUB_TOKEN não configurado. DB não foi enviado.")
         return
 
     if not os.path.exists(DB_NAME):
+        st.sidebar.warning("⚠️ Arquivo scraping.db não encontrado localmente.")
         return
+
+    status_placeholder = st.sidebar.empty()
+    status_placeholder.info("⏫ Enviando scraping.db para o GitHub...")
 
     try:
         with open(DB_NAME, "rb") as f:
             content = f.read()
-    except Exception:
+    except Exception as e:
+        status_placeholder.error(f"❌ Erro ao ler scraping.db: {e}")
         return
 
     b64_content = base64.b64encode(content).decode("utf-8")
@@ -70,8 +79,22 @@ def upload_db_to_github(commit_message: str = "Atualiza scraping.db via app"):
         resp = requests.get(api_url, headers=headers, params={"ref": GITHUB_BRANCH})
         if resp.status_code == 200:
             sha = resp.json().get("sha")
-    except Exception:
-        pass
+        elif resp.status_code == 404:
+            # arquivo ainda não existe, tudo bem
+            sha = None
+        else:
+            try:
+                err_msg = resp.json().get("message", resp.text)
+            except Exception:
+                err_msg = resp.text
+            status_placeholder.error(
+                f"❌ Falha ao buscar arquivo no GitHub "
+                f"(GET {resp.status_code}): {err_msg}"
+            )
+            return
+    except Exception as e:
+        status_placeholder.error(f"❌ Erro na requisição GET para GitHub: {e}")
+        return
 
     data = {
         "message": commit_message,
@@ -83,19 +106,19 @@ def upload_db_to_github(commit_message: str = "Atualiza scraping.db via app"):
 
     try:
         put_resp = requests.put(api_url, headers=headers, json=data)
-        if put_resp.status_code not in (200, 201):
-            # Opcional: mostrar aviso no app
+        if put_resp.status_code in (200, 201):
+            status_placeholder.success("✅ scraping.db enviado com sucesso para o GitHub!")
+        else:
             try:
                 err = put_resp.json()
+                err_msg = err.get("message", str(err))
             except Exception:
-                err = put_resp.text
-            st.warning(
-                f"Falha ao enviar scraping.db para o GitHub "
-                f"({put_resp.status_code})."
+                err_msg = put_resp.text
+            status_placeholder.error(
+                f"❌ Erro ao enviar scraping.db (PUT {put_resp.status_code}): {err_msg}"
             )
-    except Exception:
-        # Evita quebrar o app caso a API do Git caia ou falhe
-        pass
+    except Exception as e:
+        status_placeholder.error(f"❌ Erro na requisição PUT para GitHub: {e}")
 
 
 # =============================================================================
@@ -190,6 +213,7 @@ def add_product_to_db(name: str, url: str):
     try:
         upload_db_to_github(f"Adiciona produto: {name}")
     except Exception:
+        # não quebra o app se GitHub falhar
         pass
 
     return True, "Produto cadastrado com sucesso!"
