@@ -32,7 +32,7 @@ HEADERS = {
 
 # ⚠️ COLOQUE AQUI SEU TOKEN DE VERDADE (NÃO COMMITAR ISSO NO GIT!)
 # Ou melhor ainda: use st.secrets["GITHUB_TOKEN"]
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")  # ou troque por string literal local
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "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")  # ou troque por string literal local
 # Exemplo local (NÃO SUBA ISSO PARA O GIT):
 # GITHUB_TOKEN = "github_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 
