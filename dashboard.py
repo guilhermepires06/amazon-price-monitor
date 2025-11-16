@@ -2,6 +2,8 @@ import sqlite3
 import json
 import re
 from datetime import datetime
+import os
+import base64
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -23,6 +25,78 @@ HEADERS = {
     ),
     "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
 }
+
+# =============================================================================
+# CONFIG GITHUB – ENVIO DO scraping.db
+# =============================================================================
+
+GITHUB_TOKEN = "SEU_TOKEN_GITHUB_AQUI"  # <-- COLOQUE AQUI SEU github_pat_... (NÃO COMITAR)
+GITHUB_REPO = "guilhermepires06/amazon-price-monitor"
+GITHUB_FILE_PATH = "scraping.db"
+GITHUB_BRANCH = "main"
+
+
+def upload_db_to_github(commit_message: str = "Atualiza scraping.db via app"):
+    """
+    Envia o arquivo scraping.db para o GitHub, sobrescrevendo o existente.
+
+    Usa a rota:
+      PUT /repos/{owner}/{repo}/contents/{path}
+    """
+    if not GITHUB_TOKEN or GITHUB_TOKEN == "SEU_TOKEN_GITHUB_AQUI":
+        # Token não configurado: não faz nada
+        return
+
+    if not os.path.exists(DB_NAME):
+        return
+
+    try:
+        with open(DB_NAME, "rb") as f:
+            content = f.read()
+    except Exception:
+        return
+
+    b64_content = base64.b64encode(content).decode("utf-8")
+
+    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
+    headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    # Descobre SHA atual do arquivo (se já existe)
+    sha = None
+    try:
+        resp = requests.get(api_url, headers=headers, params={"ref": GITHUB_BRANCH})
+        if resp.status_code == 200:
+            sha = resp.json().get("sha")
+    except Exception:
+        pass
+
+    data = {
+        "message": commit_message,
+        "content": b64_content,
+        "branch": GITHUB_BRANCH,
+    }
+    if sha:
+        data["sha"] = sha
+
+    try:
+        put_resp = requests.put(api_url, headers=headers, json=data)
+        if put_resp.status_code not in (200, 201):
+            # Opcional: mostrar aviso no app
+            try:
+                err = put_resp.json()
+            except Exception:
+                err = put_resp.text
+            st.warning(
+                f"Falha ao enviar scraping.db para o GitHub "
+                f"({put_resp.status_code})."
+            )
+    except Exception:
+        # Evita quebrar o app caso a API do Git caia ou falhe
+        pass
+
 
 # =============================================================================
 # AJUSTE DE SCHEMA
@@ -111,6 +185,13 @@ def add_product_to_db(name: str, url: str):
     )
     conn.commit()
     conn.close()
+
+    # 🔄 Envia DB atualizado para o GitHub
+    try:
+        upload_db_to_github(f"Adiciona produto: {name}")
+    except Exception:
+        pass
+
     return True, "Produto cadastrado com sucesso!"
 
 
@@ -124,6 +205,12 @@ def update_product_image(product_id: int, image_url: str | None):
     conn.commit()
     conn.close()
 
+    # 🔄 Envia DB atualizado para o GitHub
+    try:
+        upload_db_to_github(f"Atualiza imagem do produto ID {product_id}")
+    except Exception:
+        pass
+
 
 def delete_product_from_db(product_id: int):
     conn = sqlite3.connect(DB_NAME)
@@ -132,6 +219,12 @@ def delete_product_from_db(product_id: int):
     cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
     conn.commit()
     conn.close()
+
+    # 🔄 Envia DB atualizado para o GitHub
+    try:
+        upload_db_to_github(f"Remove produto ID {product_id}")
+    except Exception:
+        pass
 
 
 def get_latest_price(df_prices: pd.DataFrame, product_id: int):
@@ -257,10 +350,15 @@ def scrape_single_product(product_id: int, url: str):
         )
         conn.commit()
     except sqlite3.IntegrityError:
-        # alguma constraint do banco falhou (NOT NULL, etc.) — ignora este registro
         conn.rollback()
     finally:
         conn.close()
+
+    # 🔄 Envia DB atualizado para o GitHub (novo preço salvo)
+    try:
+        upload_db_to_github(f"Atualiza preço do produto ID {product_id}")
+    except Exception:
+        pass
 
 
 # =============================================================================
@@ -478,7 +576,7 @@ st.markdown(
     .metric-badge.negative { border-color: #ef4444; }
     .metric-badge.neutral  { border-color: #64748b; }
 
-    a { color: #38bdf8 !IMPORTANT; }
+    a { color: #38bdf8 !important; }
 
     .stButton>button {
         border-radius: 999px !important;
@@ -538,7 +636,10 @@ st.markdown(
 
 with st.sidebar:
     st.markdown('<div class="sidebar-box">', unsafe_allow_html=True)
-    st.markdown('<div class="sidebar-title">➕ Adicionar produto da Amazon</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="sidebar-title">➕ Adicionar produto da Amazon</div>',
+        unsafe_allow_html=True,
+    )
     st.markdown(
         '<div class="sidebar-sub">'
         "Cole a URL de um produto da Amazon e, se quiser, personalize o nome. "
@@ -700,7 +801,10 @@ if selected_id is not None and selected_id in df_products["id"].values:
                             st.info("Imagem removida.")
                         st.rerun()
                 with del_col:
-                    if st.button("🗑 Excluir produto", key=f"del_prod_detail_{product['id']}"):
+                    if st.button(
+                        "🗑 Excluir produto",
+                        key=f"del_prod_detail_{product['id']}",
+                    ):
                         delete_product_from_db(product["id"])
                         st.success("Produto removido.")
                         st.session_state["selected_product_id"] = None
@@ -713,7 +817,13 @@ if selected_id is not None and selected_id in df_products["id"].values:
                 st.info("Sem histórico ainda.")
             else:
                 fig, ax = plt.subplots(figsize=(4, 2))
-                sns.lineplot(data=df_prod, x="date_local", y="price", marker="o", ax=ax)
+                sns.lineplot(
+                    data=df_prod,
+                    x="date_local",
+                    y="price",
+                    marker="o",
+                    ax=ax,
+                )
                 ax.set_xlabel("Data/Hora", fontsize=7)
                 ax.set_ylabel("Preço (R$)", fontsize=7)
                 ax.tick_params(axis="both", labelsize=7)
@@ -747,7 +857,7 @@ if selected_id is not None and selected_id in df_products["id"].values:
                         <span class="metric-badge">
                             Atual: R$ {last_price:.2f}
                         </span>
-                            <span class="metric-badge">
+                        <span class="metric-badge">
                             Mín: R$ {min_price:.2f}
                         </span>
                         <span class="metric-badge">
@@ -761,7 +871,10 @@ if selected_id is not None and selected_id in df_products["id"].values:
 # GRID DE CARDS – PRODUTOS MONITORADOS
 # ----------------------------------------------------------------------------- #
 
-st.markdown('<h2 class="section-title">Produtos monitorados</h2>', unsafe_allow_html=True)
+st.markdown(
+    '<h2 class="section-title">Produtos monitorados</h2>',
+    unsafe_allow_html=True,
+)
 
 cols = st.columns(3, gap="large")
 
@@ -770,7 +883,10 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
 
     with col:
         with st.container():
-            st.markdown('<div class="product-card-flag"></div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="product-card-flag"></div>',
+                unsafe_allow_html=True,
+            )
 
             st.markdown(
                 f'<div class="product-title">{product["name"]}</div>',
@@ -781,7 +897,10 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
             if not img_url:
                 img_url = get_product_image(product["url"])
 
-            st.markdown('<div class="product-image-wrapper">', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="product-image-wrapper">',
+                unsafe_allow_html=True,
+            )
             if img_url:
                 st.image(img_url, use_column_width=False, width=230)
             else:
@@ -792,7 +911,10 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
             st.markdown("</div>", unsafe_allow_html=True)
 
             latest_price = get_latest_price(df_prices, product["id"])
-            st.markdown('<div class="product-card-footer">', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="product-card-footer">',
+                unsafe_allow_html=True,
+            )
             if latest_price is not None:
                 st.markdown(
                     f'<span class="product-price-badge">💰 R$ {latest_price:.2f}</span>',
@@ -805,7 +927,10 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                 )
             st.markdown("</div>", unsafe_allow_html=True)
 
-            st.markdown('<div class="product-actions-row">', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="product-actions-row">',
+                unsafe_allow_html=True,
+            )
             b1, b2 = st.columns(2)
             with b1:
                 if st.button("Ver detalhes", key=f"view_{product['id']}"):
@@ -814,7 +939,10 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
             with b2:
                 if st.button("🗑 Excluir", key=f"del_{product['id']}"):
                     delete_product_from_db(product["id"])
-                    if st.session_state.get("selected_product_id") == product["id"]:
+                    if (
+                        st.session_state.get("selected_product_id")
+                        == product["id"]
+                    ):
                         st.session_state["selected_product_id"] = None
                     st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
