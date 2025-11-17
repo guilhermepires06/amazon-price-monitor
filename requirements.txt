@@ -4,3 +4,4 @@ streamlit
 pandas
 matplotlib
 seaborn
+PyJWT==2.8.0
