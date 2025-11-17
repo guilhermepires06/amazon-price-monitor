@@ -4,7 +4,6 @@ import re
 from datetime import datetime
 import os
 import base64
-import time
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -13,9 +12,12 @@ import seaborn as sns
 import requests
 import streamlit as st
 from bs4 import BeautifulSoup
-import jwt  # PyJWT -> precisa estar em requirements.txt
 
 from utils import extract_price  # converte texto de preço em float
+
+# =============================================================================
+# CONFIG BÁSICA
+# =============================================================================
 
 DB_NAME = "scraping.db"
 
@@ -29,103 +31,32 @@ HEADERS = {
 }
 
 # =============================================================================
-# CONFIG GITHUB APP – ENVIO DO scraping.db
-# =============================================================================
-# ⚠️ Coloque estes valores em st.secrets:
-# GITHUB_APP_ID, GITHUB_INSTALLATION_ID, GITHUB_PRIVATE_KEY
-# Exemplo em .streamlit/secrets.toml:
-#
-# GITHUB_APP_ID = "2303079"
-# GITHUB_INSTALLATION_ID = "xxxxxxxxxx"
-# GITHUB_PRIVATE_KEY = """-----BEGIN RSA PRIVATE KEY-----
-# ...
-# -----END RSA PRIVATE KEY-----"""
+# CONFIG GITHUB – ENVIO DO scraping.db (VIA PAT EM SECRETS)
 # =============================================================================
 
+# PEGANDO O TOKEN DOS SECRETS (NÃO HARD-CODE!)
+GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "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") 
 GITHUB_REPO = "guilhermepires06/amazon-price-monitor"
 GITHUB_FILE_PATH = "scraping.db"
 GITHUB_BRANCH = "main"
 
 
-def _get_github_app_config():
-    """Lê config do GitHub App a partir de st.secrets (ou env)."""
-    app_id = st.secrets.get("GITHUB_APP_ID") or os.getenv("GITHUB_APP_ID")
-    installation_id = (
-        st.secrets.get("GITHUB_INSTALLATION_ID")
-        or os.getenv("GITHUB_INSTALLATION_ID")
-    )
-    private_key = (
-        st.secrets.get("GITHUB_PRIVATE_KEY")
-        or os.getenv("GITHUB_PRIVATE_KEY")
-    )
-
-    if not app_id or not installation_id or not private_key:
-        return None, None, None
-
-    return str(app_id), str(installation_id), private_key
-
-
-def _create_github_jwt(app_id: str, private_key: str) -> str | None:
-    """Cria um JWT assinado com a private key do GitHub App."""
-    try:
-        now = int(time.time())
-        payload = {
-            "iat": now - 60,
-            "exp": now + 9 * 60,
-            "iss": int(app_id),
-        }
-        token = jwt.encode(payload, private_key, algorithm="RS256")
-        # PyJWT 2.x já retorna str
-        return token
-    except Exception:
-        return None
-
-
-def _get_installation_access_token(
-    app_id: str, installation_id: str, private_key: str
-) -> str | None:
-    """Pega o installation access token do GitHub App."""
-    jwt_token = _create_github_jwt(app_id, private_key)
-    if not jwt_token:
-        return None
-
-    url = f"https://api.github.com/app/installations/{installation_id}/access_tokens"
-    headers = {
-        "Authorization": f"Bearer {jwt_token}",
-        "Accept": "application/vnd.github+json",
-    }
-
-    try:
-        resp = requests.post(url, headers=headers)
-        if resp.status_code != 201:
-            return None
-        data = resp.json()
-        return data.get("token")
-    except Exception:
-        return None
-
-
-def upload_db_to_github(commit_message: str = "Atualiza scraping.db via GitHub App"):
+def upload_db_to_github(commit_message: str = "Atualiza scraping.db via app"):
     """
-    Envia o arquivo scraping.db para o GitHub usando um GitHub App.
+    Envia o arquivo scraping.db para o GitHub, sobrescrevendo o existente.
 
-    Fluxo:
-    - cria JWT com a private key do App
-    - gera installation access token
-    - PUT /repos/{owner}/{repo}/contents/{path}
+    Usa a rota:
+      PUT /repos/{owner}/{repo}/contents/{path}
+
+    Necessário:
+      - PAT com escopo repo
+      - GITHUB_TOKEN configurado em st.secrets["GITHUB_TOKEN"]
     """
-    app_id, installation_id, private_key = _get_github_app_config()
-    if not app_id or not installation_id or not private_key:
-        # Config não está completa -> não faz nada
+    if not GITHUB_TOKEN:
+        # Token não configurado: evita quebrar o app
         return
 
     if not os.path.exists(DB_NAME):
-        return
-
-    access_token = _get_installation_access_token(
-        app_id, installation_id, private_key
-    )
-    if not access_token:
         return
 
     try:
@@ -138,7 +69,7 @@ def upload_db_to_github(commit_message: str = "Atualiza scraping.db via GitHub A
 
     api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
     headers = {
-        "Authorization": f"Bearer {access_token}",
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
         "Accept": "application/vnd.github+json",
     }
 
@@ -161,12 +92,18 @@ def upload_db_to_github(commit_message: str = "Atualiza scraping.db via GitHub A
 
     try:
         put_resp = requests.put(api_url, headers=headers, json=data)
-        # Se quiser debugar, pode mostrar status:
-        # st.write("Upload status:", put_resp.status_code, put_resp.text)
         if put_resp.status_code not in (200, 201):
-            # não quebra o app
-            pass
+            # Opcional: mostrar aviso no app
+            try:
+                err = put_resp.json()
+            except Exception:
+                err = put_resp.text
+            st.warning(
+                f"Falha ao enviar scraping.db para o GitHub "
+                f"({put_resp.status_code}). Verifique o token/perm." 
+            )
     except Exception:
+        # Evita quebrar o app caso a API do Git caia ou falhe
         pass
 
 
