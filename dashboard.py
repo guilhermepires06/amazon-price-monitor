@@ -2,7 +2,6 @@ import sqlite3
 import json
 import re
 from datetime import datetime
-import os
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -14,7 +13,20 @@ from bs4 import BeautifulSoup
 
 from utils import extract_price  # converte texto de preço em float
 
-DB_NAME = "scraping.db"
+# =============================================================================
+# CONFIG BÁSICA / GITHUB
+# =============================================================================
+
+DB_TEMP_PATH = "/tmp/scraping_remote.db"
+
+GITHUB_REPO = "guilhermepires06/amazon-price-monitor"
+GITHUB_BRANCH = "main"
+GITHUB_FILE_PATH = "scraping.db"
+
+GITHUB_DB_URL = (
+    f"https://raw.githubusercontent.com/"
+    f"{GITHUB_REPO}/{GITHUB_BRANCH}/{GITHUB_FILE_PATH}"
+)
 
 HEADERS = {
     "User-Agent": (
@@ -26,61 +38,7 @@ HEADERS = {
 }
 
 # =============================================================================
-# AJUSTE DE SCHEMA (LOCAL APENAS – SEM GITHUB)
-# =============================================================================
-
-
-def ensure_schema():
-    """Garante que as tabelas e colunas necessárias existam no banco local."""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    # Cria tabela de produtos, se ainda não existir
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS products (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            url TEXT NOT NULL UNIQUE,
-            image_url TEXT
-        )
-        """
-    )
-
-    # Cria tabela de preços, se ainda não existir
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS prices (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            product_id INTEGER NOT NULL,
-            price REAL,
-            old_price REAL,
-            date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (product_id) REFERENCES products(id)
-        )
-        """
-    )
-
-    # Garante coluna image_url (caso venha de um DB antigo)
-    try:
-        cursor.execute("ALTER TABLE products ADD COLUMN image_url TEXT")
-    except sqlite3.OperationalError:
-        pass
-
-    # Garante coluna old_price (caso venha de um DB antigo)
-    try:
-        cursor.execute("ALTER TABLE prices ADD COLUMN old_price REAL")
-    except sqlite3.OperationalError:
-        pass
-
-    conn.commit()
-    conn.close()
-
-
-ensure_schema()
-
-# =============================================================================
-# CACHE – HTML
+# CACHE – HTML (para imagens da Amazon)
 # =============================================================================
 
 
@@ -92,12 +50,30 @@ def cached_html(url: str) -> str:
 
 
 # =============================================================================
-# FUNÇÕES DE BANCO
+# FUNÇÕES DE BANCO – SOMENTE LEITURA (PEGA SEMPRE DO GITHUB)
 # =============================================================================
 
 
+@st.cache_data(show_spinner=False, ttl=60)
 def get_data():
-    conn = sqlite3.connect(DB_NAME)
+    """
+    Baixa SEMPRE o scraping.db do GitHub (RAW) e lê products e prices.
+
+    ttl=60 -> no máximo 1 minuto de defasagem em relação ao GitHub Actions,
+    que está rodando o scraper de 5 em 5 minutos.
+    """
+    resp = requests.get(GITHUB_DB_URL, timeout=20)
+    if resp.status_code != 200:
+        st.error(
+            f"❌ Não foi possível baixar o scraping.db do GitHub "
+            f"(GET {resp.status_code})."
+        )
+        st.stop()
+
+    with open(DB_TEMP_PATH, "wb") as f:
+        f.write(resp.content)
+
+    conn = sqlite3.connect(DB_TEMP_PATH)
     df_products = pd.read_sql_query("SELECT * FROM products", conn)
     df_prices = pd.read_sql_query("SELECT * FROM prices", conn)
     conn.close()
@@ -105,58 +81,12 @@ def get_data():
     if "date" in df_prices.columns:
         df_prices["date"] = pd.to_datetime(df_prices["date"])
         df_prices = df_prices.sort_values("date")
-        # ajusta fuso para visualização
-        df_prices["date_local"] = df_prices["date"] - pd.Timedelta(hours=4)
+        # ajusta fuso (caso precise)
+        df_prices["date_local"] = df_prices["date"]  # aqui você ajusta se quiser
     else:
         df_prices["date_local"] = pd.NaT
 
     return df_products, df_prices
-
-
-def add_product_to_db(name: str, url: str):
-    name = name.strip()
-    url = url.strip()
-
-    if not url:
-        return False, "Informe uma URL válida."
-
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT id FROM products WHERE url = ?", (url,))
-    if cursor.fetchone():
-        conn.close()
-        return False, "Este produto já está cadastrado."
-
-    image_url = get_product_image(url)
-
-    cursor.execute(
-        "INSERT INTO products (name, url, image_url) VALUES (?, ?, ?)",
-        (name or "Produto Amazon", url, image_url),
-    )
-    conn.commit()
-    conn.close()
-    return True, "Produto cadastrado com sucesso!"
-
-
-def update_product_image(product_id: int, image_url: str | None):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE products SET image_url = ? WHERE id = ?",
-        (image_url, product_id),
-    )
-    conn.commit()
-    conn.close()
-
-
-def delete_product_from_db(product_id: int):
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM prices WHERE product_id = ?", (product_id,))
-    cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
-    conn.commit()
-    conn.close()
 
 
 def get_latest_price(df_prices: pd.DataFrame, product_id: int):
@@ -168,12 +98,12 @@ def get_latest_price(df_prices: pd.DataFrame, product_id: int):
 
 
 # =============================================================================
-# FUNÇÕES DE SCRAPING
+# FUNÇÕES DE SCRAPING – SÓ PARA PEGAR IMAGEM (NÃO MEXEM EM BANCO)
 # =============================================================================
 
 
 def get_product_image(url: str) -> str | None:
-    """Tenta achar a imagem principal da Amazon."""
+    """Tenta achar a imagem principal da Amazon (somente leitura)."""
     try:
         html = cached_html(url)
     except Exception:
@@ -225,81 +155,6 @@ def get_product_image(url: str) -> str | None:
     return None
 
 
-def fetch_product_title(url: str) -> str | None:
-    try:
-        html = cached_html(url)
-    except Exception:
-        return None
-
-    soup = BeautifulSoup(html, "html.parser")
-    title_tag = soup.find(id="productTitle")
-    if title_tag:
-        return title_tag.get_text(strip=True)
-    return None
-
-
-def scrape_single_product(product_id: int, url: str):
-    """Coleta o preço de UM produto e grava na tabela prices (local)."""
-    try:
-        html = cached_html(url)
-    except Exception:
-        # não conseguiu baixar a página, não grava nada
-        return
-
-    soup = BeautifulSoup(html, "html.parser")
-
-    # ---- preço atual ----
-    price_whole = soup.find("span", class_="a-price-whole")
-    price_fraction = soup.find("span", class_="a-price-fraction")
-
-    if price_whole and price_fraction:
-        full_price_str = f"{price_whole.text.strip()},{price_fraction.text.strip()}"
-    elif price_whole:
-        full_price_str = price_whole.text.strip()
-    else:
-        full_price_str = None
-
-    price = extract_price(full_price_str)
-
-    # ---- preço antigo (riscado), se existir ----
-    old_price_tag = soup.find("span", class_="a-text-price")
-    old_price_str = old_price_tag.get_text(strip=True) if old_price_tag else None
-    old_price = extract_price(old_price_str)
-
-    # Se não achou preço válido, não grava
-    if price is None:
-        return
-
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    try:
-        cursor.execute(
-            """
-            INSERT INTO prices (product_id, price, old_price)
-            VALUES (?, ?, ?)
-            """,
-            (product_id, price, old_price),
-        )
-        conn.commit()
-    except sqlite3.IntegrityError:
-        conn.rollback()
-    finally:
-        conn.close()
-
-
-def scrape_all_products():
-    """Atualiza o preço de todos os produtos cadastrados (para botão manual)."""
-    df_products, _ = get_data()
-    if df_products.empty:
-        return 0
-
-    updated = 0
-    for _, prod in df_products.iterrows():
-        scrape_single_product(prod["id"], prod["url"])
-        updated += 1
-    return updated
-
-
 # =============================================================================
 # CONFIG STREAMLIT + CSS
 # =============================================================================
@@ -324,7 +179,7 @@ st.markdown(
         color: #e5e7eb;
         border-right: 1px solid #1f2937;
     }
-    [data-testid="stSidebar"] h2, 
+    [data-testid="stSidebar"] h2,
     [data-testid="stSidebar"] h3 {
         color: #f9fafb !important;
     }
@@ -390,7 +245,7 @@ st.markdown(
         gap: 0.35rem;
         align-items: center;
         justify-content: flex-end;
-        white-space: nowrap; 
+        white-space: nowrap;
     }
     .last-update-pill strong {
         color: #e5e7eb;
@@ -570,57 +425,27 @@ st.markdown(
 )
 
 # =============================================================================
-# SIDEBAR – CADASTRO + ASSINATURA
+# SIDEBAR – INFORMAÇÕES / ASSINATURA (SEM CADASTRO)
 # =============================================================================
 
 with st.sidebar:
     st.markdown('<div class="sidebar-box">', unsafe_allow_html=True)
     st.markdown(
-        '<div class="sidebar-title">➕ Adicionar produto da Amazon</div>',
+        '<div class="sidebar-title">📊 Fonte dos dados</div>',
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<div class="sidebar-sub">'
-        "Cole a URL de um produto da Amazon e, se quiser, personalize o nome. "
-        "O sistema tentará buscar automaticamente o título e a imagem."
-        "</div>",
+        """
+        <div class="sidebar-sub">
+        Este painel está em <strong>modo somente leitura</strong>.<br><br>
+        Os dados vêm do arquivo <code>scraping.db</code> que é
+        atualizado automaticamente pelo <strong>GitHub Actions</strong>
+        a cada 5 minutos.
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
-    new_url = st.text_input("URL do produto na Amazon")
-    new_name = st.text_input("Nome do produto (opcional)")
-
-    if st.button("Adicionar produto"):
-        if not new_url.strip():
-            st.error("Informe a URL do produto.")
-        else:
-            name_to_use = new_name.strip()
-            if not name_to_use:
-                st.info("Buscando título automaticamente na Amazon...")
-                auto_title = fetch_product_title(new_url)
-                name_to_use = auto_title or "Produto Amazon"
-
-            ok, msg = add_product_to_db(name_to_use, new_url)
-            if ok:
-                st.success(msg)
-                # já coleta o primeiro preço do produto
-                conn = sqlite3.connect(DB_NAME)
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT id FROM products WHERE url = ?",
-                    (new_url.strip(),),
-                )
-                row = cursor.fetchone()
-                conn.close()
-                if row:
-                    product_id = row[0]
-                    scrape_single_product(product_id, new_url.strip())
-                    st.session_state["selected_product_id"] = product_id
-                st.rerun()
-            else:
-                st.warning(msg)
-
-    # Assinatura logo abaixo do botão
     st.markdown(
         """
         <div style="
@@ -651,15 +476,16 @@ with st.sidebar:
 
 df_products, df_prices = get_data()
 
-# Última atualização
+# Última atualização (baseada na última linha de prices.date_local)
 if not df_prices.empty and "date_local" in df_prices.columns:
     last_dt = df_prices["date_local"].max()
-    last_str = last_dt.strftime("%d/%m %H:%M") if pd.notna(last_dt) else "--/-- --:--"
+    last_str = (
+        last_dt.strftime("%d/%m %H:%M") if pd.notna(last_dt) else "--/-- --:--"
+    )
 else:
     last_str = "--/-- --:--"
 
-header_col1, header_col2, header_col3 = st.columns([3, 1.5, 1])
-
+header_col1, header_col2 = st.columns([3, 1])
 with header_col1:
     st.markdown(
         """
@@ -684,21 +510,17 @@ with header_col2:
         unsafe_allow_html=True,
     )
 
-with header_col3:
-    # Botão para atualizar todos os produtos manualmente (somente local)
-    if st.button("🔄 Atualizar todos os preços"):
-        qt = scrape_all_products()
-        st.success(f"Atualização concluída para {qt} produto(s).")
-        st.rerun()
-
 if df_products.empty:
-    st.warning("Nenhum produto cadastrado. Adicione um produto na barra lateral.")
+    st.warning(
+        "Nenhum produto cadastrado no banco de dados do GitHub. "
+        "Verifique o scraping.db do repositório."
+    )
     st.stop()
 
 sns.set_style("whitegrid")
 
 # ----------------------------------------------------------------------------- #
-# CARD DE DETALHES – CENTRALIZADO
+# CARD DE DETALHES – CENTRALIZADO (SOMENTE LEITURA)
 # ----------------------------------------------------------------------------- #
 
 selected_id = st.session_state.get("selected_product_id")
@@ -712,7 +534,10 @@ if selected_id is not None and selected_id in df_products["id"].values:
     _, center_col, _ = st.columns([1, 2, 1])
     with center_col:
         with st.container():
-            st.markdown('<div class="detail-card-flag"></div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="detail-card-flag"></div>',
+                unsafe_allow_html=True,
+            )
 
             top_cols = st.columns([5, 1])
             with top_cols[0]:
@@ -724,7 +549,10 @@ if selected_id is not None and selected_id in df_products["id"].values:
 
             img_col, info_col = st.columns([1, 1])
             with img_col:
-                img_url = product.get("image_url") or get_product_image(product["url"])
+                img_url = product.get("image_url")
+                if not img_url:
+                    img_url = get_product_image(product["url"])
+
                 if img_url:
                     st.image(img_url, width=170)
                 else:
@@ -732,39 +560,13 @@ if selected_id is not None and selected_id in df_products["id"].values:
             with info_col:
                 st.markdown(f"[Ver na Amazon]({product['url']})")
 
-                manual_img = st.text_input(
-                    "URL da imagem",
-                    value=product.get("image_url") or "",
-                    key=f"manual_img_{product['id']}",
-                )
-
-                save_col, del_col = st.columns(2)
-                with save_col:
-                    if st.button("Salvar imagem", key=f"save_img_{product['id']}"):
-                        if manual_img.strip():
-                            update_product_image(product["id"], manual_img.strip())
-                            st.success("Imagem atualizada.")
-                        else:
-                            update_product_image(product["id"], None)
-                            st.info("Imagem removida.")
-                        st.rerun()
-                with del_col:
-                    if st.button(
-                        "🗑 Excluir produto",
-                        key=f"del_prod_detail_{product['id']}",
-                    ):
-                        delete_product_from_db(product["id"])
-                        st.success("Produto removido.")
-                        st.session_state["selected_product_id"] = None
-                        st.rerun()
-
             st.markdown("---")
             st.write("**Histórico de preços**")
 
             if df_prod.empty:
-                st.info("Sem histórico ainda.")
+                st.info("Sem histórico ainda para este produto.")
             else:
-                fig, ax = plt.subplots(figsize=(4, 2))
+                fig, ax = plt.subplots(figsize=(4.5, 2.2))
                 sns.lineplot(
                     data=df_prod,
                     x="date_local",
@@ -775,7 +577,9 @@ if selected_id is not None and selected_id in df_products["id"].values:
                 ax.set_xlabel("Data/Hora", fontsize=7)
                 ax.set_ylabel("Preço (R$)", fontsize=7)
                 ax.tick_params(axis="both", labelsize=7)
-                ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m\n%H:%M"))
+                ax.xaxis.set_major_formatter(
+                    mdates.DateFormatter("%d/%m\n%H:%M")
+                )
                 plt.tight_layout()
                 st.pyplot(fig)
 
@@ -879,18 +683,9 @@ for idx, (_, product) in enumerate(df_products.iterrows()):
                 '<div class="product-actions-row">',
                 unsafe_allow_html=True,
             )
-            b1, b2 = st.columns(2)
+            b1, _ = st.columns(2)
             with b1:
                 if st.button("Ver detalhes", key=f"view_{product['id']}"):
                     st.session_state["selected_product_id"] = product["id"]
-                    st.rerun()
-            with b2:
-                if st.button("🗑 Excluir", key=f"del_{product['id']}"):
-                    delete_product_from_db(product["id"])
-                    if (
-                        st.session_state.get("selected_product_id")
-                        == product["id"]
-                    ):
-                        st.session_state["selected_product_id"] = None
                     st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
