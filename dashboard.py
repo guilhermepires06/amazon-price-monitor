@@ -30,8 +30,7 @@ HEADERS = {
 # CONFIG GITHUB – ENVIO DO scraping.db
 # =============================================================================
 
-# SUBSTITUA PELO SEU TOKEN VÁLIDO
-GITHUB_TOKEN = "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"
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "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")
 GITHUB_REPO = "guilhermepires06/amazon-price-monitor"
 GITHUB_FILE_PATH = "scraping.db"
 GITHUB_BRANCH = "main"
