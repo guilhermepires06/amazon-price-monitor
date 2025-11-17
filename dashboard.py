@@ -34,11 +34,7 @@ GITHUB_REPO = "guilhermepires06/amazon-price-monitor"
 GITHUB_FILE_PATH = "scraping.db"
 GITHUB_BRANCH = "main"
 
-# Para segurança, o token deve vir da variável de ambiente:
-#   Windows PowerShell:
-#       $env:GITHUB_TOKEN = "seu_token_aqui"
-#   Linux/macOS:
-#       export GITHUB_TOKEN="seu_token_aqui"
+
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "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").strip()
 
