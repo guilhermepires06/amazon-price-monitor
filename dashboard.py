@@ -31,7 +31,7 @@ HEADERS = {
 # =============================================================================
 
 # ⚠️ Token vem de st.secrets["GITHUB_TOKEN"]
-GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "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")
+GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "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")
 GITHUB_REPO = "guilhermepires06/amazon-price-monitor"
 GITHUB_FILE_PATH = "scraping.db"
 GITHUB_BRANCH = "main"
