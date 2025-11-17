@@ -40,8 +40,7 @@ GITHUB_BRANCH = "main"
 #   Linux/macOS:
 #       export GITHUB_TOKEN="seu_token_aqui"
 
-GITHUB_TOKEN = os.getenv(GITHUB_TOKEN = os.getenv("GITHUB_TOKEN","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").strip()
-
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "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").strip()
 
 def upload_db_to_github(commit_message: str = "Atualiza scraping.db via app"):
     """
