@@ -689,7 +689,7 @@ with header_col3:
     if st.button("🔄 Atualizar todos os preços"):
         qt = scrape_all_products()
         st.success(f"Atualização concluída para {qt} produto(s).")
-        st.experimental_rerun()
+        st.rerun()
 
 if df_products.empty:
     st.warning("Nenhum produto cadastrado. Adicione um produto na barra lateral.")
