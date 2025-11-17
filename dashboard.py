@@ -15,10 +15,6 @@ from bs4 import BeautifulSoup
 
 from utils import extract_price  # converte texto de preço em float
 
-# =============================================================================
-# CONFIG BÁSICA
-# =============================================================================
-
 DB_NAME = "scraping.db"
 
 HEADERS = {
@@ -31,14 +27,41 @@ HEADERS = {
 }
 
 # =============================================================================
-# CONFIG GITHUB – ENVIO DO scraping.db (VIA PAT EM SECRETS)
+# CONFIG GITHUB – ENVIO DO scraping.db
 # =============================================================================
 
-# PEGANDO O TOKEN DOS SECRETS (NÃO HARD-CODE!)
-GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "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") 
+# ⚠️ Token vem de st.secrets["GITHUB_TOKEN"]
+GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "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")
 GITHUB_REPO = "guilhermepires06/amazon-price-monitor"
 GITHUB_FILE_PATH = "scraping.db"
 GITHUB_BRANCH = "main"
+
+GITHUB_DB_RAW_URL = (
+    f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{GITHUB_FILE_PATH}"
+)
+
+
+def ensure_local_db_from_github():
+    """
+    Se não existir scraping.db local, tenta baixar do GitHub (RAW).
+    Isso garante que você comece com o mesmo banco que o Actions usa.
+    """
+    if os.path.exists(DB_NAME):
+        return
+
+    try:
+        resp = requests.get(GITHUB_DB_RAW_URL, timeout=20)
+        if resp.status_code == 200:
+            with open(DB_NAME, "wb") as f:
+                f.write(resp.content)
+        else:
+            # Só avisa; não quebra o app
+            st.warning(
+                f"⚠️ Não foi possível baixar scraping.db do GitHub "
+                f"(GET {resp.status_code}). Iniciando DB local vazio."
+            )
+    except Exception as e:
+        st.warning(f"⚠️ Erro ao tentar baixar scraping.db do GitHub: {e}")
 
 
 def upload_db_to_github(commit_message: str = "Atualiza scraping.db via app"):
@@ -48,21 +71,24 @@ def upload_db_to_github(commit_message: str = "Atualiza scraping.db via app"):
     Usa a rota:
       PUT /repos/{owner}/{repo}/contents/{path}
 
-    Necessário:
-      - PAT com escopo repo
-      - GITHUB_TOKEN configurado em st.secrets["GITHUB_TOKEN"]
+    Com debug para entender 401 / outros erros.
     """
     if not GITHUB_TOKEN:
-        # Token não configurado: evita quebrar o app
+        st.warning(
+            "⚠️ GITHUB_TOKEN não configurado em st.secrets. "
+            "Pulei o upload para o GitHub."
+        )
         return
 
     if not os.path.exists(DB_NAME):
+        st.warning("⚠️ Arquivo scraping.db não encontrado localmente. Nada para enviar.")
         return
 
     try:
         with open(DB_NAME, "rb") as f:
             content = f.read()
-    except Exception:
+    except Exception as e:
+        st.warning(f"⚠️ Erro ao ler scraping.db local: {e}")
         return
 
     b64_content = base64.b64encode(content).decode("utf-8")
@@ -79,8 +105,23 @@ def upload_db_to_github(commit_message: str = "Atualiza scraping.db via app"):
         resp = requests.get(api_url, headers=headers, params={"ref": GITHUB_BRANCH})
         if resp.status_code == 200:
             sha = resp.json().get("sha")
-    except Exception:
-        pass
+        elif resp.status_code == 404:
+            # arquivo ainda não existe, tudo bem
+            sha = None
+        elif resp.status_code == 401:
+            st.warning(
+                "❌ GET 401 ao buscar arquivo no GitHub: "
+                "credenciais inválidas ou token sem permissão."
+            )
+            return
+        else:
+            st.warning(
+                f"⚠️ Falha ao checar arquivo no GitHub (GET {resp.status_code}): "
+                f"{resp.text}"
+            )
+    except Exception as e:
+        st.warning(f"⚠️ Erro de rede ao checar arquivo no GitHub: {e}")
+        return
 
     data = {
         "message": commit_message,
@@ -93,19 +134,18 @@ def upload_db_to_github(commit_message: str = "Atualiza scraping.db via app"):
     try:
         put_resp = requests.put(api_url, headers=headers, json=data)
         if put_resp.status_code not in (200, 201):
-            # Opcional: mostrar aviso no app
-            try:
-                err = put_resp.json()
-            except Exception:
-                err = put_resp.text
             st.warning(
-                f"Falha ao enviar scraping.db para o GitHub "
-                f"({put_resp.status_code}). Verifique o token/perm." 
+                f"❌ Falha ao enviar scraping.db para o GitHub "
+                f"(PUT {put_resp.status_code}): {put_resp.text}"
             )
-    except Exception:
-        # Evita quebrar o app caso a API do Git caia ou falhe
-        pass
+        else:
+            st.success("✅ scraping.db enviado para o GitHub com sucesso!")
+    except Exception as e:
+        st.warning(f"⚠️ Erro de rede ao enviar scraping.db para o GitHub: {e}")
 
+
+# garante que temos um scraping.db inicial
+ensure_local_db_from_github()
 
 # =============================================================================
 # AJUSTE DE SCHEMA
