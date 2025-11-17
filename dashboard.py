@@ -3,7 +3,6 @@ import json
 import re
 from datetime import datetime
 import os
-import base64
 
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -27,148 +26,51 @@ HEADERS = {
 }
 
 # =============================================================================
-# CONFIG GITHUB – ENVIO DO scraping.db
-# =============================================================================
-
-# ⚠️ Token vem de st.secrets["GITHUB_TOKEN"]
-GITHUB_TOKEN = st.secrets.get("GITHUB_TOKEN", "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")
-GITHUB_REPO = "guilhermepires06/amazon-price-monitor"
-GITHUB_FILE_PATH = "scraping.db"
-GITHUB_BRANCH = "main"
-
-GITHUB_DB_RAW_URL = (
-    f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{GITHUB_FILE_PATH}"
-)
-
-
-def ensure_local_db_from_github():
-    """
-    Se não existir scraping.db local, tenta baixar do GitHub (RAW).
-    Isso garante que você comece com o mesmo banco que o Actions usa.
-    """
-    if os.path.exists(DB_NAME):
-        return
-
-    try:
-        resp = requests.get(GITHUB_DB_RAW_URL, timeout=20)
-        if resp.status_code == 200:
-            with open(DB_NAME, "wb") as f:
-                f.write(resp.content)
-        else:
-            # Só avisa; não quebra o app
-            st.warning(
-                f"⚠️ Não foi possível baixar scraping.db do GitHub "
-                f"(GET {resp.status_code}). Iniciando DB local vazio."
-            )
-    except Exception as e:
-        st.warning(f"⚠️ Erro ao tentar baixar scraping.db do GitHub: {e}")
-
-
-def upload_db_to_github(commit_message: str = "Atualiza scraping.db via app"):
-    """
-    Envia o arquivo scraping.db para o GitHub, sobrescrevendo o existente.
-
-    Usa a rota:
-      PUT /repos/{owner}/{repo}/contents/{path}
-
-    Com debug para entender 401 / outros erros.
-    """
-    if not GITHUB_TOKEN:
-        st.warning(
-            "⚠️ GITHUB_TOKEN não configurado em st.secrets. "
-            "Pulei o upload para o GitHub."
-        )
-        return
-
-    if not os.path.exists(DB_NAME):
-        st.warning("⚠️ Arquivo scraping.db não encontrado localmente. Nada para enviar.")
-        return
-
-    try:
-        with open(DB_NAME, "rb") as f:
-            content = f.read()
-    except Exception as e:
-        st.warning(f"⚠️ Erro ao ler scraping.db local: {e}")
-        return
-
-    b64_content = base64.b64encode(content).decode("utf-8")
-
-    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE_PATH}"
-    headers = {
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json",
-    }
-
-    # Descobre SHA atual do arquivo (se já existe)
-    sha = None
-    try:
-        resp = requests.get(api_url, headers=headers, params={"ref": GITHUB_BRANCH})
-        if resp.status_code == 200:
-            sha = resp.json().get("sha")
-        elif resp.status_code == 404:
-            # arquivo ainda não existe, tudo bem
-            sha = None
-        elif resp.status_code == 401:
-            st.warning(
-                "❌ GET 401 ao buscar arquivo no GitHub: "
-                "credenciais inválidas ou token sem permissão."
-            )
-            return
-        else:
-            st.warning(
-                f"⚠️ Falha ao checar arquivo no GitHub (GET {resp.status_code}): "
-                f"{resp.text}"
-            )
-    except Exception as e:
-        st.warning(f"⚠️ Erro de rede ao checar arquivo no GitHub: {e}")
-        return
-
-    data = {
-        "message": commit_message,
-        "content": b64_content,
-        "branch": GITHUB_BRANCH,
-    }
-    if sha:
-        data["sha"] = sha
-
-    try:
-        put_resp = requests.put(api_url, headers=headers, json=data)
-        if put_resp.status_code not in (200, 201):
-            st.warning(
-                f"❌ Falha ao enviar scraping.db para o GitHub "
-                f"(PUT {put_resp.status_code}): {put_resp.text}"
-            )
-        else:
-            st.success("✅ scraping.db enviado para o GitHub com sucesso!")
-    except Exception as e:
-        st.warning(f"⚠️ Erro de rede ao enviar scraping.db para o GitHub: {e}")
-
-
-# garante que temos um scraping.db inicial
-ensure_local_db_from_github()
-
-# =============================================================================
-# AJUSTE DE SCHEMA
+# AJUSTE DE SCHEMA (LOCAL APENAS – SEM GITHUB)
 # =============================================================================
 
 
 def ensure_schema():
-    """Garante que todas as colunas necessárias existam no banco."""
+    """Garante que as tabelas e colunas necessárias existam no banco local."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
-    # 1) Garantir coluna image_url em products
+    # Cria tabela de produtos, se ainda não existir
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            url TEXT NOT NULL UNIQUE,
+            image_url TEXT
+        )
+        """
+    )
+
+    # Cria tabela de preços, se ainda não existir
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS prices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL,
+            price REAL,
+            old_price REAL,
+            date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )
+        """
+    )
+
+    # Garante coluna image_url (caso venha de um DB antigo)
     try:
         cursor.execute("ALTER TABLE products ADD COLUMN image_url TEXT")
     except sqlite3.OperationalError:
-        # coluna já existe
         pass
 
-    # 2) Garantir coluna old_price em prices
+    # Garante coluna old_price (caso venha de um DB antigo)
     try:
         cursor.execute("ALTER TABLE prices ADD COLUMN old_price REAL")
     except sqlite3.OperationalError:
-        # coluna já existe
         pass
 
     conn.commit()
@@ -203,7 +105,7 @@ def get_data():
     if "date" in df_prices.columns:
         df_prices["date"] = pd.to_datetime(df_prices["date"])
         df_prices = df_prices.sort_values("date")
-        # corrigindo fuso (antes ficava +1h)
+        # ajusta fuso para visualização
         df_prices["date_local"] = df_prices["date"] - pd.Timedelta(hours=4)
     else:
         df_prices["date_local"] = pd.NaT
@@ -230,17 +132,10 @@ def add_product_to_db(name: str, url: str):
 
     cursor.execute(
         "INSERT INTO products (name, url, image_url) VALUES (?, ?, ?)",
-        (name, url, image_url),
+        (name or "Produto Amazon", url, image_url),
     )
     conn.commit()
     conn.close()
-
-    # 🔄 Envia DB atualizado para o GitHub
-    try:
-        upload_db_to_github(f"Adiciona produto: {name}")
-    except Exception:
-        pass
-
     return True, "Produto cadastrado com sucesso!"
 
 
@@ -254,12 +149,6 @@ def update_product_image(product_id: int, image_url: str | None):
     conn.commit()
     conn.close()
 
-    # 🔄 Envia DB atualizado para o GitHub
-    try:
-        upload_db_to_github(f"Atualiza imagem do produto ID {product_id}")
-    except Exception:
-        pass
-
 
 def delete_product_from_db(product_id: int):
     conn = sqlite3.connect(DB_NAME)
@@ -268,12 +157,6 @@ def delete_product_from_db(product_id: int):
     cursor.execute("DELETE FROM products WHERE id = ?", (product_id,))
     conn.commit()
     conn.close()
-
-    # 🔄 Envia DB atualizado para o GitHub
-    try:
-        upload_db_to_github(f"Remove produto ID {product_id}")
-    except Exception:
-        pass
 
 
 def get_latest_price(df_prices: pd.DataFrame, product_id: int):
@@ -356,7 +239,7 @@ def fetch_product_title(url: str) -> str | None:
 
 
 def scrape_single_product(product_id: int, url: str):
-    """Coleta o preço de UM produto e grava na tabela prices."""
+    """Coleta o preço de UM produto e grava na tabela prices (local)."""
     try:
         html = cached_html(url)
     except Exception:
@@ -383,7 +266,7 @@ def scrape_single_product(product_id: int, url: str):
     old_price_str = old_price_tag.get_text(strip=True) if old_price_tag else None
     old_price = extract_price(old_price_str)
 
-    # Se não achou preço válido, não tenta gravar para evitar IntegrityError
+    # Se não achou preço válido, não grava
     if price is None:
         return
 
@@ -403,11 +286,18 @@ def scrape_single_product(product_id: int, url: str):
     finally:
         conn.close()
 
-    # 🔄 Envia DB atualizado para o GitHub (novo preço salvo)
-    try:
-        upload_db_to_github(f"Atualiza preço do produto ID {product_id}")
-    except Exception:
-        pass
+
+def scrape_all_products():
+    """Atualiza o preço de todos os produtos cadastrados (para botão manual)."""
+    df_products, _ = get_data()
+    if df_products.empty:
+        return 0
+
+    updated = 0
+    for _, prod in df_products.iterrows():
+        scrape_single_product(prod["id"], prod["url"])
+        updated += 1
+    return updated
 
 
 # =============================================================================
@@ -713,6 +603,7 @@ with st.sidebar:
             ok, msg = add_product_to_db(name_to_use, new_url)
             if ok:
                 st.success(msg)
+                # já coleta o primeiro preço do produto
                 conn = sqlite3.connect(DB_NAME)
                 cursor = conn.cursor()
                 cursor.execute(
@@ -767,7 +658,8 @@ if not df_prices.empty and "date_local" in df_prices.columns:
 else:
     last_str = "--/-- --:--"
 
-header_col1, header_col2 = st.columns([3, 1])
+header_col1, header_col2, header_col3 = st.columns([3, 1.5, 1])
+
 with header_col1:
     st.markdown(
         """
@@ -791,6 +683,13 @@ with header_col2:
         """,
         unsafe_allow_html=True,
     )
+
+with header_col3:
+    # Botão para atualizar todos os produtos manualmente (somente local)
+    if st.button("🔄 Atualizar todos os preços"):
+        qt = scrape_all_products()
+        st.success(f"Atualização concluída para {qt} produto(s).")
+        st.experimental_rerun()
 
 if df_products.empty:
     st.warning("Nenhum produto cadastrado. Adicione um produto na barra lateral.")
