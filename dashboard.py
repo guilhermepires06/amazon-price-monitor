@@ -434,17 +434,7 @@ with st.sidebar:
         '<div class="sidebar-title">📊 Fonte dos dados</div>',
         unsafe_allow_html=True,
     )
-    st.markdown(
-        """
-        <div class="sidebar-sub">
-        Este painel está em <strong>modo somente leitura</strong>.<br><br>
-        Os dados vêm do arquivo <code>scraping.db</code> que é
-        atualizado automaticamente pelo <strong>GitHub Actions</strong>
-        a cada 5 minutos.
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    
 
     st.markdown(
         """
@@ -497,18 +487,7 @@ with header_col1:
         unsafe_allow_html=True,
     )
 
-with header_col2:
-    st.markdown(
-        f"""
-        <div style="display:flex; justify-content:flex-end; margin-top:0.3rem;">
-            <div class="last-update-pill">
-                <span>🕒 Última atualização:</span>
-                <strong>{last_str}</strong>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+
 
 if df_products.empty:
     st.warning(
